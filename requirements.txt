@@ -1,0 +1,11 @@
+numpy
+soundcard>=0.4.3
+soxr
+soundfile
+faster-whisper
+comtypes
+pycaw
+pynput
+pystray
+Pillow
+pytest
