@@ -62,3 +62,22 @@ def test_finalize_idempotent(tmp_path):
     finalize_meeting(tmp_path)
     others, _ = finalize_meeting(tmp_path)
     assert len(sf.read(others, dtype="int16")[0]) == 500
+
+
+def test_finalize_reuses_flacs_when_tracks_deleted(tmp_path):
+    import shutil
+    make_track(tmp_path, "others-1", "others", 0, np.full(800, 9, np.int16))
+    finalize_meeting(tmp_path)
+    shutil.rmtree(tmp_path / "tracks")
+    others, _ = finalize_meeting(tmp_path)
+    d, _ = sf.read(others, dtype="int16")
+    assert len(d) == 800 and d[0] == 9
+
+
+def test_finalize_no_audio_but_transcript_raises(tmp_path):
+    import pytest
+    from teams_listener.audio.mixer import NoAudioError
+    (tmp_path / "transcript.md").write_text("real transcript")
+    with pytest.raises(NoAudioError):
+        finalize_meeting(tmp_path)
+    assert not (tmp_path / "others.flac").exists()

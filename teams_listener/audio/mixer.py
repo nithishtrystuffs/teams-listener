@@ -11,6 +11,10 @@ import soundfile as sf
 from .track import SAMPLE_RATE
 
 
+class NoAudioError(Exception):
+    """The meeting has no recorded audio left (it was deleted), so it can't be transcribed again."""
+
+
 @dataclass
 class Track:
     kind: str
@@ -60,8 +64,13 @@ def mix_to_file(tracks: list[Track], total_samples: int, out_path: Path, block: 
 def finalize_meeting(folder: Path) -> tuple[Path, Path]:
     folder = Path(folder)
     tracks = load_tracks(folder)
-    total = max((t.offset_samples + t.length for t in tracks), default=0) or SAMPLE_RATE
     others, me = folder / "others.flac", folder / "me.flac"
+    if not tracks:
+        if others.exists() and me.exists():
+            return others, me  # raw tracks were removed; the mixed audio is all that's left
+        if (folder / "transcript.md").exists():
+            raise NoAudioError(f"No audio left for {folder.name} (it was deleted after transcription).")
+    total = max((t.offset_samples + t.length for t in tracks), default=0) or SAMPLE_RATE
     mix_to_file([t for t in tracks if t.kind == "others"], total, others)
     mix_to_file([t for t in tracks if t.kind == "me"], total, me)
     return others, me

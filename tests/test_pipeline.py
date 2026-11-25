@@ -101,3 +101,48 @@ def test_queue_reports_errors_and_continues(tmp_path):
     assert ev.wait(10)
     assert errors and errors[0][0] == a and done == [b]
     q.shutdown()
+
+
+def test_queue_paused_does_not_start_jobs(tmp_path):
+    done = threading.Event()
+    q = TranscriptionQueue(lambda: FakeEngine(), Settings, lambda *a: None, lambda f, p: done.set(), lambda f, e: None)
+    q.pause()
+    q.submit(fake_meeting(tmp_path))
+    assert not done.wait(0.4)
+    q.resume()
+    assert done.wait(10)
+    q.shutdown()
+
+
+def test_queue_pause_blocks_mid_job(tmp_path):
+    import time
+    done = threading.Event()
+    waited = []
+    holder = {}
+
+    class PausingEngine(FakeEngine):
+        def transcribe(self, audio, speaker, on_progress):
+            if speaker == "Others":
+                holder["q"].pause()
+                threading.Timer(0.3, holder["q"].resume).start()
+                t0 = time.monotonic()
+                on_progress(0.5)  # must block until resumed
+                waited.append(time.monotonic() - t0)
+            return super().transcribe(audio, speaker, on_progress)
+
+    q = TranscriptionQueue(lambda: PausingEngine(), Settings, lambda *a: None, lambda f, p: done.set(), lambda f, e: None)
+    holder["q"] = q
+    q.submit(fake_meeting(tmp_path))
+    assert done.wait(10)
+    assert waited[0] >= 0.25
+    q.shutdown()
+
+
+def test_transcribe_again_after_audio_deleted_keeps_transcript(tmp_path):
+    folder = fake_meeting(tmp_path)
+    transcribe_meeting(folder, FakeEngine(), Settings(delete_audio_after=True), lambda f: None)
+    before = (folder / "transcript.md").read_text(encoding="utf-8")
+    from teams_listener.audio.mixer import NoAudioError
+    with pytest.raises(NoAudioError):
+        transcribe_meeting(folder, FakeEngine(others=[]), Settings(), lambda f: None)
+    assert (folder / "transcript.md").read_text(encoding="utf-8") == before

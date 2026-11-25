@@ -6,7 +6,7 @@ from typing import Callable
 import pystray
 from PIL import Image, ImageDraw
 
-COLORS = {"idle": (128, 128, 128), "muted": (215, 38, 38), "live": (40, 170, 70)}
+COLORS = {"idle": (128, 128, 128), "muted": (215, 38, 38), "live": (40, 170, 70), "nomic": (224, 168, 0)}
 
 
 def make_icon_image(state: str) -> Image.Image:

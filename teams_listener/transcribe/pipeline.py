@@ -75,6 +75,8 @@ class TranscriptionQueue:
         self._engine: Engine | None = None
         self._engine_key: tuple | None = None
         self._busy = False
+        self._allowed = threading.Event()
+        self._allowed.set()
         self._thread = threading.Thread(target=self._run, name="transcribe", daemon=True)
         self._thread.start()
 
@@ -82,10 +84,22 @@ class TranscriptionQueue:
     def busy(self) -> bool:
         return self._busy or not self._q.empty()
 
+    @property
+    def paused(self) -> bool:
+        return not self._allowed.is_set()
+
+    def pause(self) -> None:
+        """Hold transcription (e.g. while a meeting is being recorded). A running job stops at its next segment."""
+        self._allowed.clear()
+
+    def resume(self) -> None:
+        self._allowed.set()
+
     def submit(self, folder: Path) -> None:
         self._q.put(Path(folder))
 
     def shutdown(self) -> None:
+        self._allowed.set()
         self._q.put(None)
         self._thread.join(timeout=5)
 
@@ -102,10 +116,13 @@ class TranscriptionQueue:
             folder = self._q.get()
             if folder is None:
                 return
+            self._allowed.wait()
             self._busy = True
             started = time.monotonic()
 
             def progress(frac: float, folder=folder) -> None:
+                # faster-whisper decodes lazily per segment, so blocking here pauses inference itself
+                self._allowed.wait()
                 elapsed = time.monotonic() - started
                 eta = elapsed / frac * (1 - frac) if frac > 0.02 else None
                 self._on_progress(folder, frac, eta)

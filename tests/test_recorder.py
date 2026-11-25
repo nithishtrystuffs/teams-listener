@@ -124,9 +124,11 @@ def test_device_gone_closes_track_and_logs(tmp_path):
 
 def test_mic_gone_falls_back_to_default(tmp_path):
     r = make_recorder(tmp_path, [], mic=FakeDevice("m", "BT Mic", 1), default_mic=FakeDevice("d", "Laptop Mic", 99))
+    r._started = True
     act = r._open_mic()
     r._pump_once(act)
     assert r._pump_once(act) is False
+    r._poll_once(start_threads=False)  # the poller reopens the lost mic
     assert any(e["type"] == "mic_switched" and e["detail"] == "Laptop Mic" for e in r.events)
     assert r._mic is not None and r._mic.track_id == "me-2"
     r._pump_once(r._mic)
@@ -163,3 +165,26 @@ def test_threaded_start_stop_summary(tmp_path):
     summary = r.stop()
     assert summary.duration_s > 0.2 and "Speakers" in summary.devices
     assert (tmp_path / "tracks/others-1.pcm").exists()
+
+
+def test_mic_name_reports_current_mic_or_none(tmp_path):
+    r = make_recorder(tmp_path, [])
+    assert r.mic_name is None
+    r._open_mic()
+    assert r.mic_name == "Mic"
+    r2 = make_recorder(tmp_path / "x", [], no_mic=True)
+    r2._open_mic()
+    assert r2.mic_name is None
+
+
+def test_mic_loss_reopened_only_by_poller(tmp_path):
+    r = make_recorder(tmp_path, [], mic=FakeDevice("m", "BT Mic", 1), default_mic=FakeDevice("d", "Laptop Mic", 99))
+    r._started = True
+    act = r._open_mic()
+    r._pump_once(act)
+    assert r._pump_once(act) is False
+    assert r._mic is None  # the mic thread must not reopen it itself
+    r._poll_once(start_threads=False)
+    assert r._mic is not None and r._mic.track_id == "me-2"
+    r._poll_once(start_threads=False)
+    assert r._mic.track_id == "me-2" and r._counters["me"] == 2  # no second open

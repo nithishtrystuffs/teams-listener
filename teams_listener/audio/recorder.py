@@ -72,6 +72,12 @@ class Recorder:
                 self._muted = value
                 self._event("mute" if value else "unmute", "")
 
+    @property
+    def mic_name(self) -> str | None:
+        """Name of the mic currently recorded, or None when there is no mic."""
+        act = self._mic
+        return act.device.name if act is not None else None
+
     def levels(self) -> dict[str, float]:
         with self._lock:
             others = max(self._levels["others"].values(), default=0.0)
@@ -147,8 +153,8 @@ class Recorder:
             self._event("device_added", dev.name)
             if start_threads:
                 self._spawn(self._device_loop, act.track_id, act)
-        if start_threads and self._mic is None and self._started:
-            # no mic yet (none existed, or it vanished with no fallback): keep trying
+        if self._mic is None and self._started and not self._stop.is_set():
+            # The poller is the only place a missing/lost mic is (re)opened, so it can't be opened twice.
             self._open_mic(fallback=True)
 
     def _pump_once(self, act: Active) -> bool:
@@ -163,11 +169,7 @@ class Recorder:
                 else:
                     self._active.pop(act.device.id, None)
                     self._levels["others"].pop(act.track_id, None)
-            if act.is_mic:
-                self._event("device_removed", act.device.name)
-                self._open_mic(fallback=True)
-            else:
-                self._event("device_removed", act.device.name)
+            self._event("device_removed", act.device.name)
             return False
         samples = act.resampler.process(frames)
         rms = float(np.sqrt(np.mean(np.square(frames)))) if len(frames) else 0.0

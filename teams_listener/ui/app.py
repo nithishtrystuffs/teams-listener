@@ -16,6 +16,7 @@ from ..config import ALLOWED_MODELS, Settings, load_settings, save_settings
 from ..hotkeys import MuteHotkeys
 from ..meeting import MeetingMeta, list_meetings, make_meeting_dir, read_meta, write_meta
 from ..transcribe.pipeline import TranscriptionQueue
+from .status import mic_display
 from .tray import Tray
 
 log = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ class App:
         self.rec_started = 0.0
         self.transcribing: dict[Path, float] = {}
         self.hotkeys: MuteHotkeys | None = None
+        self._shown_mic: str | None = None
 
         self.queue = TranscriptionQueue(
             None, lambda: self.settings,
@@ -84,6 +86,8 @@ class App:
             lv = self.recorder.levels()
             self.meter_others["value"] = min(100, lv["others"] * 300)
             self.meter_me["value"] = min(100, lv["me"] * 300)
+            if self.recorder.mic_name != self._shown_mic:
+                self._render_mic()
             el = int(time.monotonic() - self.rec_started)
             self.elapsed.set(f"{el // 3600:02d}:{el % 3600 // 60:02d}:{el % 60:02d}")
         self.root.after(100, self._tick)
@@ -159,13 +163,17 @@ class App:
             write_meta(self.folder, self.meta)
             self.recorder = Recorder(self.folder, devices.list_output_loopbacks, devices.get_mic,
                                      self.settings.mic_device)
+            self.queue.pause()  # spec: no transcription while recording (keeps the Teams call smooth)
             self.recorder.start()
         except Exception as e:  # noqa: BLE001
             log.exception("start failed")
             self.recorder = None
+            self.queue.resume()
             messagebox.showerror("Teams Listener", f"Could not start recording:\n{e}")
             return
         self.rec_started = time.monotonic()
+        if self.queue.busy:
+            self.prog_text.set("Transcription paused while recording")
         self.start_btn.config(text="■ Stop recording")
         self.title_entry.config(state="disabled")
         self._render_mic()
@@ -187,6 +195,7 @@ class App:
         self.elapsed.set("")
         self.meter_others["value"] = self.meter_me["value"] = 0
         self._render_mic()
+        self.queue.resume()
         self._submit(folder)
 
     def toggle_mute(self) -> None:
@@ -195,19 +204,21 @@ class App:
         self.recorder.muted = not self.recorder.muted
         self._render_mic()
 
+    _MIC_STYLE = {
+        "idle": ("disabled", "#dddddd", "#555", "#dddddd", "Teams Listener — idle"),
+        "nomic": ("normal", "#e0a800", "black", "#c79500", "Teams Listener — recording Others only (no mic)"),
+        "muted": ("normal", "#d72626", "white", "#b81f1f", "Teams Listener — recording, mic MUTED"),
+        "live": ("normal", "#28aa46", "white", "#1f8c39", "Teams Listener — recording, mic LIVE"),
+    }
+
     def _render_mic(self) -> None:
         rec = self.recorder
-        if rec is None:
-            self.mic_btn.config(text="MIC: not recording", state="disabled", bg="#dddddd", fg="#555")
-            self.tray.set_state("idle", "Teams Listener — idle")
-        elif rec.muted:
-            self.mic_btn.config(text="🔇 MUTED — click or press shortcut to speak", state="normal",
-                                bg="#d72626", fg="white", activebackground="#b81f1f")
-            self.tray.set_state("muted", "Teams Listener — recording, mic MUTED")
-        else:
-            self.mic_btn.config(text="🎙 LIVE — your mic is being recorded", state="normal",
-                                bg="#28aa46", fg="white", activebackground="#1f8c39")
-            self.tray.set_state("live", "Teams Listener — recording, mic LIVE")
+        mic = rec.mic_name if rec else None
+        self._shown_mic = mic
+        state, text = mic_display(rec is not None, bool(rec and rec.muted), mic)
+        btn_state, bg, fg, active_bg, tooltip = self._MIC_STYLE[state]
+        self.mic_btn.config(text=text, state=btn_state, bg=bg, fg=fg, activebackground=active_bg)
+        self.tray.set_state(state, tooltip)
 
     # ---- transcription ---------------------------------------------------
     def _submit(self, folder: Path) -> None:
