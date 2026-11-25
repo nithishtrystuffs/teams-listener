@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pcm
+*.flac
+models/
+.superpowers/
+.pytest_cache/
