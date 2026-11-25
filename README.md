@@ -31,7 +31,7 @@ another network and choose it under **Settings → Model folder**.
    when you speak, then press again to mute. The shortcut works while Teams has focus.
    The tray icon is grey when idle, red when recording and muted, and green when recording and live.
 3. Press **■ Stop recording**. Transcription starts in the background with a progress bar and an estimate of the time left.
-   You can start another recording while it runs; transcription runs at low priority so calls stay smooth.
+   You can start another recording while it runs: transcription **pauses** while you record and resumes when you stop, so calls stay smooth.
 4. Double-click a meeting in **Recent meetings** (or press **Open transcript**).
 
 Closing the window keeps the app in the tray. If a recording is running it asks whether to stop and save.
@@ -81,8 +81,8 @@ Measured on 2 min 17 s of clear English speech (Windows TTS), CPU only:
 
 Real meetings with crosstalk or accents can take a bit longer. Silence is skipped, so a quiet meeting is faster.
 
-Recording itself uses very little CPU. Transcription never runs during a recording unless an earlier meeting is
-still being processed, and then it runs at the lowest priority.
+Recording itself uses about 0.5% of the CPU. Transcription never runs during a recording: an unfinished one pauses
+when you press Start and carries on after Stop.
 
 ## Development
 
