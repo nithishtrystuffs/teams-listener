@@ -110,7 +110,8 @@ Logs: `%APPDATA%\TeamsListener\app.log`. Settings: `%APPDATA%\TeamsListener\sett
 | Real loopback recording: tone placed at correct time, silence elsewhere | ✅ |
 | Teams test call, mic muted throughout → Others only | ⏳ needs you |
 | Unmute with Ctrl+Alt+M while Teams has focus → Me lines at right time, tray icon colour | ⏳ needs you (no mic was detected at build time) |
-| Bluetooth headphones connect/disconnect mid-recording → no gap, events in meta.json | ⏳ needs you |
+| Bluetooth headphones (realme Buds Air7) connect/disconnect mid-recording → no gap, events logged | ✅ buds→laptop speakers→buds switches captured; every sentence played was transcribed |
+| Bluetooth: opening the buds' mic doesn't degrade the audio you hear | ✅ confirmed by ear |
 | Speakers + unmuted mic (echo) → no duplicate Me lines | ⏳ needs you |
 | Hard-kill the recording process mid-meeting → listed "not transcribed" → transcribes | ✅ (simulated with the recorder process; worth one real try in the app) |
 | Close window while recording → prompt → saved and transcribed | ⏳ needs you |
