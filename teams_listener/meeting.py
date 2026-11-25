@@ -65,3 +65,31 @@ def read_meta(folder: Path) -> MeetingMeta:
         devices=list(d.get("devices", [])),
         events=list(d.get("events", [])),
     )
+
+
+@dataclass
+class MeetingEntry:
+    folder: Path
+    title: str
+    status: str  # "transcribed" | "not transcribed"
+
+
+def list_meetings(output_dir: Path, limit: int = 50) -> list[MeetingEntry]:
+    """Meeting folders, newest first (folder names start with YYYY-MM-DD_HHMM)."""
+    output_dir = Path(output_dir)
+    if not output_dir.is_dir():
+        return []
+    entries: list[MeetingEntry] = []
+    for d in sorted((p for p in output_dir.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True):
+        has_meta = (d / META_NAME).exists()
+        if not has_meta and not (d / "tracks").is_dir():
+            continue
+        try:
+            title = read_meta(d).title if has_meta else d.name
+        except (ValueError, KeyError, OSError):
+            title = d.name
+        status = "transcribed" if (d / "transcript.md").exists() else "not transcribed"
+        entries.append(MeetingEntry(d, title, status))
+        if len(entries) >= limit:
+            break
+    return entries
