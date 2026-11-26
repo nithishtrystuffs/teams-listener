@@ -226,7 +226,7 @@ class Controller:
 
     # ---- meetings ----------------------------------------------------------
     def list_meetings(self) -> list[dict]:
-        entries = list_meetings(self._root())
+        entries = list_meetings(self._root(), limit=None)  # the sidebar and search need every meeting
         with self._lock:
             rec_folder = self._folder if self._recorder is not None else None
             rec_title = self._title

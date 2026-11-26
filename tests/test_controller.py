@@ -368,3 +368,11 @@ def test_last_state_matches_status_under_contention(ctl):
     [x.join() for x in ts]
     last = [d for n, d in ctl.events if n == "state"][-1]
     assert last["muted"] == ctl.status()["muted"]
+
+
+def test_list_meetings_returns_all_meetings_not_just_50(ctl):
+    for i in range(60):
+        d = ctl.out / f"2026-03-{1 + i // 24:02d}_{i % 24:02d}00_m{i}"
+        d.mkdir(parents=True)
+        write_meta(d, MeetingMeta(f"M{i}", datetime(2026, 3, 1 + i // 24, i % 24, 0)))
+    assert len(ctl.list_meetings()) == 60
