@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { EngineClient } = require('./engine');
-const { resolveEngine, resolveAudio, isOpenableFolder } = require('./paths');
+const { resolveEngine, resolveAudio, isOpenableFolder, realDir } = require('./paths');
 const { trayModel, stateAfterEngineEvent } = require('./tray');
 const { shouldApplyState, seqAfter } = require('../renderer/lib/ui-helpers');
 const { loadUiState, saveUiState, pillPosition } = require('./ui-state');
@@ -53,7 +53,8 @@ function applyTheme(theme) {
 async function refreshOutputDir(applyThemeToo = false) {
   try {
     const s = await engine.call('get_settings');
-    if (s && typeof s.output_dir === 'string') outputDir = s.output_dir;
+    // Resolved once here (junctions/symlinks, like the engine's Path.resolve) so folder checks match.
+    if (s && typeof s.output_dir === 'string') outputDir = realDir(s.output_dir);
     if (applyThemeToo && s) applyTheme(s.theme);
   } catch (err) {
     console.error('get_settings failed:', err.message);

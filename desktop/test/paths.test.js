@@ -56,3 +56,36 @@ test('isOpenableFolder', async () => {
   const missing = async () => { throw new Error('ENOENT'); };
   assert.strictEqual(await isOpenableFolder(out, path.join(out, 'a'), missing), null);
 });
+
+test('isInside: case-insensitive on Windows', () => {
+  assert.ok(isInside('C:\\Data\\Out', 'c:\\data\\out\\m'));
+  assert.ok(isInside('c:\\data\\out\\', 'C:\\Data\\Out\\m'));
+});
+
+test('isInside: drive root output folder', () => {
+  assert.ok(isInside('D:\\', 'D:\\m'));
+  assert.ok(isInside('D:\\', 'd:\\m\\x'));
+  assert.ok(!isInside('D:\\', 'D:\\'));
+  assert.ok(!isInside('D:\\', 'E:\\m'));
+});
+
+test('isInside: sibling prefix, equal path and other drive are not inside', () => {
+  assert.ok(!isInside('C:\\out', 'C:\\out2'));
+  assert.ok(!isInside('C:\\out', 'C:\\out2\\m'));
+  assert.ok(!isInside('C:\\out', 'C:\\out'));
+  assert.ok(!isInside('C:\\out', 'c:\\OUT\\'));
+  assert.ok(!isInside('C:\\out', 'D:\\out\\m'));
+});
+
+test('resolveAudio: drive root and case-different output folder', () => {
+  assert.strictEqual(resolveAudio('D:\\', 'app-audio://meeting/m1/me.flac'), path.join('D:\\', 'm1', 'me.flac'));
+  assert.strictEqual(resolveAudio('c:\\DATA\\out', 'app-audio://meeting/m1/others.flac'),
+    path.join('c:\\DATA\\out', 'm1', 'others.flac'));
+});
+
+test('realDir resolves links and falls back to path.resolve', () => {
+  const { realDir } = require('../src/paths');
+  assert.strictEqual(realDir('C:\\link', () => 'D:\\real'), 'D:\\real');
+  assert.strictEqual(realDir('C:\\x\\..\\gone', () => { throw new Error('ENOENT'); }), path.resolve('C:\\gone'));
+  assert.strictEqual(realDir('', () => 'x'), '');
+});

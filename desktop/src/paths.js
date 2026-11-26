@@ -1,3 +1,4 @@
+const fs = require('node:fs');
 const path = require('node:path');
 
 function resolveEngine({ isPackaged, resourcesPath, repoRoot }) {
@@ -7,12 +8,25 @@ function resolveEngine({ isPackaged, resourcesPath, repoRoot }) {
   return { command: path.join(repoRoot, '.venv', 'Scripts', 'python.exe'), args: ['-m', 'teams_listener'] };
 }
 
-// True when p is strictly inside dir (not equal to it).
+// Windows paths compare case-insensitively.
+const pathKey = (p) => (process.platform === 'win32' ? path.resolve(p).toLowerCase() : path.resolve(p));
+
+// True when p is strictly inside dir (not equal to it). Works for a drive root such as D:\.
 function isInside(dir, p) {
   if (!dir || !p) return false;
-  const base = path.resolve(dir);
-  const target = path.resolve(p);
-  return target.startsWith(base + path.sep);
+  const rel = path.relative(pathKey(dir), pathKey(p));
+  return !!rel && rel !== '..' && !rel.startsWith('..' + path.sep) && !path.isAbsolute(rel);
+}
+
+// The real path of a directory (junctions and symlinks resolved, as the engine's Path.resolve does),
+// or path.resolve(p) when it can't be resolved (e.g. it doesn't exist yet).
+function realDir(p, realpath = fs.realpathSync.native) {
+  if (!p) return '';
+  try {
+    return realpath(p);
+  } catch {
+    return path.resolve(p);
+  }
 }
 
 function resolveAudio(outputDir, url) {
@@ -27,7 +41,7 @@ function resolveAudio(outputDir, url) {
     if (file !== 'others.flac' && file !== 'me.flac') return null;
     if (!name || name.includes('/') || name.includes('\\') || name.includes('..')) return null;
     const result = path.join(outputDir, name, file);
-    if (!path.resolve(result).startsWith(path.resolve(outputDir) + path.sep)) return null;
+    if (!isInside(outputDir, result)) return null;
     return result;
   } catch {
     return null;
@@ -46,4 +60,4 @@ async function isOpenableFolder(outputDir, p, statFn) {
   }
 }
 
-module.exports = { resolveEngine, resolveAudio, isInside, isOpenableFolder };
+module.exports = { resolveEngine, resolveAudio, isInside, isOpenableFolder, realDir };
