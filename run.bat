@@ -1,3 +1,2 @@
 @echo off
-cd /d "%~dp0"
-start "" ".venv\Scripts\pythonw.exe" -m teams_listener
+cd /d "%~dp0desktop" && start "" "node_modules\.bin\electron.cmd" .

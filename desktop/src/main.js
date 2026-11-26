@@ -352,8 +352,9 @@ function startEngine() {
     resourcesPath: process.resourcesPath,
     repoRoot,
   });
-  // In development the engine runs with cwd = repo root so `-m teams_listener` resolves.
-  const spawnEngine = app.isPackaged ? spawn : (c, a, o) => spawn(c, a, { ...o, cwd: repoRoot });
+  // Development: cwd = repo root so `-m teams_listener` resolves. Packaged: cwd = the engine folder.
+  const engineCwd = app.isPackaged ? path.dirname(command) : repoRoot;
+  const spawnEngine = (c, a, o) => spawn(c, a, { ...o, cwd: engineCwd });
   engine = new EngineClient({ spawn: spawnEngine, command, args, env: { ...process.env } });
   engine.on('event', (name, data) => {
     if (name === 'meetings_changed') refreshOutputDir();
