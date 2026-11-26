@@ -294,6 +294,8 @@ class Controller:
                 self._hotkeys = hk
         except ValueError:
             log.warning("invalid hotkey %r; running without hotkeys", s.hotkey)
+        except Exception:  # noqa: BLE001 - a pynput failure must not crash-loop the engine
+            log.warning("could not start hotkeys; running without hotkeys", exc_info=True)
 
     def save_settings(self, d: dict) -> dict:
         from pynput.keyboard import HotKey

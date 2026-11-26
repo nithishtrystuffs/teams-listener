@@ -391,3 +391,16 @@ def test_stop_failure_still_resumes_queue_and_emits_state(ctl):
     assert ctl.made["queue"].paused is False
     assert ctl.events and ctl.events[-1][0] == "state" and ctl.events[-1][1]["recording"] is False
     assert ctl.status()["recording"] is False
+
+
+def test_hotkey_start_failure_runs_without_hotkeys(tmp_path):
+    save_settings(Settings(output_dir=str(tmp_path / "o")), tmp_path / "s.json")
+
+    class Broken(FakeHotkeys):
+        def start(self):
+            raise RuntimeError("hook install failed")
+
+    c = Controller(lambda n, d: None, settings_path=tmp_path / "s.json",
+                   recorder_factory=lambda f, m: FakeRecorder(f, m),
+                   queue_factory=lambda *a: FakeQueue(*a), hotkeys_factory=lambda *a: Broken(*a))
+    assert c.status()["recording"] is False and c._hotkeys is None
