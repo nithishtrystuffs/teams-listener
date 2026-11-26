@@ -13,7 +13,7 @@ A personal Windows app that records your Teams meetings and turns them into a ti
 ## Install
 
 Build the installer once (see Development), then run **`desktop\dist\Teams Listener Setup <version>.exe`**.
-It installs per user (no admin rights) to `%LOCALAPPDATA%\Programs\Teams Listener`, adds a desktop shortcut and
+It installs per user (no admin rights) to `%LOCALAPPDATA%\Programs\teams-listener`, adds a desktop shortcut and
 starts the app. The installer isn't code-signed, so Windows SmartScreen may warn: click **More info → Run anyway**.
 
 The app opens a window and a tray icon. Pressing **● New recording** also shows a small always-on-top pill with the
@@ -103,7 +103,7 @@ npm run dist --prefix desktop         :: PyInstaller engine + NSIS installer in 
 .venv\Scripts\python -m teams_listener --tk   :: old Tkinter UI, as a fallback
 ```
 
-Logs: `%APPDATA%\TeamsListenerpp.log`. Settings: `%APPDATA%\TeamsListener\settings.json`.
+Logs: `%APPDATA%\TeamsListener\app.log`. Settings: `%APPDATA%\TeamsListener\settings.json`.
 
 ## Capture notes (spike, 2026-11-25)
 - `soundcard` WASAPI loopback on this laptop delivers continuous zero-filled blocks during silence and warns

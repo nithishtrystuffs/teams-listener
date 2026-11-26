@@ -1,4 +1,4 @@
-# PyInstaller spec: one-folder build of the engine. Run from the repo root.
+# PyInstaller spec: one-folder build of the engine. `npm run build:engine` (run from desktop/) calls it with --distpath build/engine-dist; paths resolve relative to this file.
 import os
 from PyInstaller.utils.hooks import collect_all
 
