@@ -1,4 +1,5 @@
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -149,11 +150,21 @@ def test_mute_when_idle_is_noop(ctl):
     assert len(ctl.events) == before
 
 
+def wait_until(pred, timeout=2.0):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if pred():
+            return True
+        time.sleep(0.005)
+    return pred()
+
+
 def test_hotkey_toggles_mute(ctl):
     ctl.start("T")
     ctl.events.clear()
     ctl.made["hk"].on_toggle()
-    assert ctl.made["rec"].muted is False and ctl.made["hk"].started
+    assert wait_until(lambda: ctl.made["rec"].muted is False and ctl.events)
+    assert ctl.made["hk"].started
     assert ctl.events[-1][0] == "state" and ctl.events[-1][1]["muted"] is False
 
 
@@ -404,3 +415,34 @@ def test_hotkey_start_failure_runs_without_hotkeys(tmp_path):
                    recorder_factory=lambda f, m: FakeRecorder(f, m),
                    queue_factory=lambda *a: FakeQueue(*a), hotkeys_factory=lambda *a: Broken(*a))
     assert c.status()["recording"] is False and c._hotkeys is None
+
+
+def test_hotkey_callback_never_blocks_on_the_controller_lock(ctl):
+    ctl.start("T")
+    held, release = threading.Event(), threading.Event()
+
+    def holder():
+        with ctl._lock:
+            held.set()
+            release.wait(5)
+
+    t = threading.Thread(target=holder)
+    t.start()
+    assert held.wait(2)
+    t0 = time.perf_counter()
+    ctl.made["hk"].on_toggle()
+    took = time.perf_counter() - t0
+    assert took < 0.05
+    time.sleep(0.05)
+    assert ctl.made["rec"].muted is True  # still blocked behind the lock
+    release.set()
+    t.join(5)
+    assert wait_until(lambda: ctl.made["rec"].muted is False)
+
+
+def test_shutdown_stops_hotkey_worker(ctl):
+    worker = ctl._hk_worker
+    assert worker.is_alive()
+    ctl.shutdown()
+    worker.join(2)
+    assert not worker.is_alive()

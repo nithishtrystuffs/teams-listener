@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import queue
 import threading
 import time
 from datetime import datetime
@@ -66,6 +67,11 @@ class Controller:
         self._stage: dict[Path, str] = {}
         self._last_devices: tuple | None = None
         self._hotkeys = None
+        # The hotkey callback runs inside pynput's low-level keyboard hook, which must return at once
+        # (Windows drops a slow hook silently). It only enqueues; this worker does the actual toggle.
+        self._hk_requests: queue.Queue = queue.Queue()
+        self._hk_worker = threading.Thread(target=self._hotkey_loop, name="hotkey-toggle", daemon=True)
+        self._hk_worker.start()
 
         self._queue = (queue_factory or _default_queue)(
             lambda: self.settings, self._on_progress, self._on_done, self._on_error, self._on_stage)
@@ -275,6 +281,20 @@ class Controller:
     def list_mics(self) -> list[str]:
         return list(self._mic_lister())
 
+    def _on_hotkey(self) -> None:
+        """Called on pynput's hook thread: never block here."""
+        self._hk_requests.put_nowait("toggle")
+
+    def _hotkey_loop(self) -> None:
+        while True:
+            item = self._hk_requests.get()
+            if item is None:
+                return
+            try:
+                self.toggle_mute()
+            except Exception:  # noqa: BLE001
+                log.exception("hotkey mute toggle failed")
+
     def _stop_hotkeys(self) -> None:
         with self._hk_lock:
             hk, self._hotkeys = self._hotkeys, None
@@ -288,7 +308,7 @@ class Controller:
         self._stop_hotkeys()
         s = self.settings
         try:
-            hk = self._hotkeys_factory(s.hotkey, s.follow_teams_shortcut, self.toggle_mute)
+            hk = self._hotkeys_factory(s.hotkey, s.follow_teams_shortcut, self._on_hotkey)
             hk.start()
             with self._hk_lock:
                 self._hotkeys = hk
@@ -335,5 +355,7 @@ class Controller:
         finally:
             try:
                 self._stop_hotkeys()
+                self._hk_requests.put(None)
+                self._hk_worker.join(timeout=2)
             finally:
                 self._queue.shutdown()
