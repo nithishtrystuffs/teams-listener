@@ -26,6 +26,18 @@ class WhisperEngine:
                                        cpu_threads=self.cpu_threads)
         return self._model
 
+    def needs_download(self) -> bool:
+        """True if the model isn't cached locally yet (first use will download it). Never raises."""
+        if self.model_path:
+            return False
+        try:
+            from faster_whisper.utils import download_model
+
+            download_model(self.model_name, local_files_only=True)
+            return False
+        except Exception:  # noqa: BLE001 - any failure means "not available locally"
+            return True
+
     def transcribe(self, audio: Path, speaker: Speaker, on_progress: Callable[[float], None]) -> list[Segment]:
         segments, info = self._load().transcribe(str(audio), language="en", vad_filter=True, beam_size=5)
         out: list[Segment] = []
