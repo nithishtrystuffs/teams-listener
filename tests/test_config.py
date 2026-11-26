@@ -27,3 +27,10 @@ def test_unknown_keys_ignored_and_bad_model_reset(tmp_path):
     p = tmp_path / "s.json"
     p.write_text('{"model": "large-v3", "zzz": 1}')
     assert load_settings(p).model == "small.en"
+
+
+def test_invalid_theme_resets(tmp_path):
+    p = tmp_path / "s.json"
+    p.write_text('{"theme": "neon"}')
+    assert load_settings(p).theme == "system"
+    assert Settings().theme == "system"

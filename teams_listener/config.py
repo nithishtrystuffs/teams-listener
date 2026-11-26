@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 ALLOWED_MODELS = ("small.en", "medium.en")
+ALLOWED_THEMES = ("system", "light", "dark")
 DEFAULT_SETTINGS_PATH = Path(os.environ.get("APPDATA", Path.home())) / "TeamsListener" / "settings.json"
 
 
@@ -19,6 +20,7 @@ class Settings:
     follow_teams_shortcut: bool = False
     delete_audio_after: bool = False
     output_dir: str = field(default_factory=lambda: str(Path.home() / "Documents" / "TeamsTranscripts"))
+    theme: str = "system"  # system | light | dark
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -39,6 +41,8 @@ def load_settings(path: Path | None = None) -> Settings:
     s = Settings(**{k: v for k, v in raw.items() if k in known})
     if s.model not in ALLOWED_MODELS:
         s.model = Settings.model
+    if s.theme not in ALLOWED_THEMES:
+        s.theme = Settings.theme
     return s
 
 

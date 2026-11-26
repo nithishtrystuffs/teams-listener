@@ -78,6 +78,12 @@ class Recorder:
         act = self._mic
         return act.device.name if act is not None else None
 
+    @property
+    def output_names(self) -> list[str]:
+        """Names of the output devices currently recorded, in the order they were added."""
+        with self._lock:
+            return [a.device.name for a in self._active.values()]
+
     def levels(self) -> dict[str, float]:
         with self._lock:
             others = max(self._levels["others"].values(), default=0.0)

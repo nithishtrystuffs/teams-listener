@@ -188,3 +188,10 @@ def test_mic_loss_reopened_only_by_poller(tmp_path):
     assert r._mic is not None and r._mic.track_id == "me-2"
     r._poll_once(start_threads=False)
     assert r._mic.track_id == "me-2" and r._counters["me"] == 2  # no second open
+
+
+def test_output_names_lists_active(tmp_path):
+    r = make_recorder(tmp_path, [FakeDevice("a", "Speakers", 5), FakeDevice("b", "Headset", 5)])
+    assert r.output_names == []
+    r._poll_once(start_threads=False)
+    assert r.output_names == ["Speakers", "Headset"]
