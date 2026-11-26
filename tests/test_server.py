@@ -164,7 +164,9 @@ def test_unhashable_cmd_gets_error_and_loop_continues():
     assert h["c"].shutdowns == 1
 
 
-def test_invalid_utf8_stdin_survives():
+def test_invalid_utf8_stdin_survives(monkeypatch):
+    monkeypatch.setattr(server, "_setup_logging", lambda: None)
+    monkeypatch.setattr(sys, "stdout", sys.stdout)
     stdin = io.BytesIO(b'\xff\xfe garbage\n{"id":1,"cmd":"status"}\n')
     stdout = io.BytesIO()
     holder = {}
