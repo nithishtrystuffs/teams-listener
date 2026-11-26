@@ -376,3 +376,18 @@ def test_list_meetings_returns_all_meetings_not_just_50(ctl):
         d.mkdir(parents=True)
         write_meta(d, MeetingMeta(f"M{i}", datetime(2026, 3, 1 + i // 24, i % 24, 0)))
     assert len(ctl.list_meetings()) == 60
+
+
+def test_stop_failure_still_resumes_queue_and_emits_state(ctl):
+    ctl.start("T")
+
+    def boom():
+        raise OSError("device gone")
+
+    ctl.made["rec"].stop = boom
+    ctl.events.clear()
+    with pytest.raises(OSError):
+        ctl.stop()
+    assert ctl.made["queue"].paused is False
+    assert ctl.events and ctl.events[-1][0] == "state" and ctl.events[-1][1]["recording"] is False
+    assert ctl.status()["recording"] is False

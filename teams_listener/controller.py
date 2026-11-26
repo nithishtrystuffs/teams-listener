@@ -138,7 +138,15 @@ class Controller:
         return folder
 
     def stop(self) -> dict:
-        folder = self._finish_recording()
+        try:
+            folder = self._finish_recording()
+        except Exception:
+            # The recorder is already detached: the queue must resume and the UIs must see "not recording".
+            try:
+                self._emit_state()
+            finally:
+                self._queue.resume()
+            raise
         if folder is None:
             return {"folder": None}
         self._emit_state()
