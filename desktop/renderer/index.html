@@ -4,8 +4,97 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self' app-audio:; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
 <title>Teams Listener</title>
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
-<p>Teams Listener</p>
+<div class="titlebar"><div class="brand"><div class="logo"></div>Teams Listener</div></div>
+<div class="body">
+  <aside class="side">
+    <button class="big" id="bigbtn" type="button">● New recording</button>
+    <label class="search">⌕ <input id="q" placeholder="Search all transcripts" spellcheck="false" autocomplete="off"><kbd>Ctrl K</kbd></label>
+    <div class="list" id="list"></div>
+    <div class="foot"><button class="link" id="settings-link" type="button">⚙ Settings</button><span id="foot-model">🔒 offline</span></div>
+  </aside>
+
+  <section class="main">
+    <div class="banner" id="banner" hidden></div>
+
+    <!-- IDLE -->
+    <div class="view" id="v-idle">
+      <div class="idle">
+        <h3>Ready when your call starts</h3>
+        <form class="row" id="start-form">
+          <label class="search"><input id="title" placeholder="Meeting title (optional)" autocomplete="off"></label>
+          <button class="btn primary" id="start-btn" type="submit">● Start</button>
+        </form>
+        <div class="devices" id="idle-devices"></div>
+        <div class="hint" id="idle-hint"></div>
+      </div>
+    </div>
+
+    <!-- RECORDING -->
+    <div class="view" id="v-rec">
+      <div class="head">
+        <h2 id="rtitle"></h2>
+        <div class="meta" id="rmeta"></div>
+      </div>
+      <div class="rec" id="recpane">
+        <div class="timer"><span class="pulse"></span><span id="rtime">00:00:00</span></div>
+        <button class="mute off" id="mute" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path id="slash" d="M4 4l16 16"/></svg>
+          <b id="mlabel">MUTED</b><small id="mhint">Click or Ctrl+Alt+M</small>
+        </button>
+        <button class="nomic" id="nomic" type="button" disabled hidden>No microphone found — recording Others only</button>
+        <div class="meters">
+          <div class="meter"><div class="h"><b>Others</b><span>always recorded</span></div><div class="bars" id="bo"></div></div>
+          <div class="meter"><div class="h"><b>Me</b><span id="mestate">muted</span></div><div class="bars me" id="bm"></div></div>
+        </div>
+        <div class="tl"><div class="track" id="track"></div><div class="cap"><span>0:00</span><span>When you were live</span><span id="rtime2">0:00</span></div></div>
+        <div class="recbar"><button class="btn" id="pill-btn" type="button">⤓ Minimise to pill</button><button class="btn danger" id="stop-btn" type="button">■ Stop &amp; transcribe</button></div>
+      </div>
+    </div>
+
+    <!-- TRANSCRIBING -->
+    <div class="view" id="v-prog">
+      <div class="head"><h2 id="ptitle"></h2><div class="meta" id="pmeta"></div></div>
+      <div class="progress">
+        <div class="ring" id="ring"><div id="pct">0%</div></div>
+        <div class="ptext" id="pstage">Transcribing…</div>
+        <div class="hint" id="eta"></div>
+      </div>
+    </div>
+
+    <!-- TRANSCRIPT -->
+    <div class="view" id="v-tx">
+      <div class="head">
+        <h2><span id="ttitle"></span><span class="chip" id="tchip"></span></h2>
+        <div class="meta" id="tmeta"></div>
+        <div class="toolbar">
+          <button class="btn" id="copy-btn" type="button">⧉ Copy all</button>
+          <button class="btn" id="export-btn" type="button">⤓ Export .md</button>
+          <button class="btn" id="folder-btn" type="button">📁 Open folder</button>
+          <button class="btn" id="again-btn" type="button">↻ Transcribe again</button>
+        </div>
+      </div>
+      <div class="player-wrap" id="player-wrap">
+        <div class="player">
+          <button class="play" id="play-btn" type="button" title="Play">▶</button>
+          <span id="pos">00:00:00</span>
+          <div class="seek" id="seek"><i id="seek-fill"></i></div>
+          <span id="dur">00:00:00</span>
+          <span title="Click any timestamp to jump there">ⓘ</span>
+        </div>
+        <audio id="a-others" preload="metadata"></audio>
+        <audio id="a-me" preload="metadata"></audio>
+      </div>
+      <div class="tabs" id="tabs"><button type="button" data-tab="all" class="on">Transcript</button><button type="button" data-tab="me">Only my lines</button><button type="button" data-tab="details">Details</button></div>
+      <div class="tx" id="tx"></div>
+    </div>
+  </section>
+</div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="lib/ui-helpers.js"></script>
+<script src="views/transcript.js"></script>
+<script src="app.js"></script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, protocol, clipboard, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, clipboard, dialog, shell, nativeTheme } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
@@ -48,11 +48,25 @@ async function refreshOutputDir() {
   }
 }
 
+// Title bar overlay (native caption buttons) colours, matched to the renderer theme.
+function overlayColors() {
+  return nativeTheme.shouldUseDarkColors
+    ? { color: '#00000000', symbolColor: '#ececf1', height: 38 }
+    : { color: '#00000000', symbolColor: '#16181d', height: 38 };
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 760,
+    minWidth: 900,
+    minHeight: 600,
     show: true,
+    title: 'Teams Listener',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: overlayColors(),
+    backgroundMaterial: 'mica',
+    backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -61,7 +75,37 @@ function createWindow() {
     },
   });
   mainWindow.on('closed', () => { mainWindow = null; });
-  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  const query = {};
+  if (process.env.TL_SMOKE_OPEN) query.smokeOpen = '1';
+  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
+}
+
+nativeTheme.on('updated', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setTitleBarOverlay(overlayColors());
+});
+
+// Smoke mode (TL_SMOKE=<png path>): screenshot once the renderer reports its first render, then quit.
+let smokeDone = false;
+function smokeExit(code) {
+  if (smokeDone) return;
+  smokeDone = true;
+  const stopped = engine ? engine.stop().catch(() => {}) : Promise.resolve();
+  const timeout = new Promise((r) => setTimeout(r, 6000));
+  Promise.race([stopped, timeout]).finally(() => app.exit(code));
+}
+
+async function smokeCapture() {
+  if (!process.env.TL_SMOKE || !mainWindow) return;
+  await new Promise((r) => setTimeout(r, 300));
+  try {
+    const img = await mainWindow.webContents.capturePage();
+    await fs.promises.writeFile(process.env.TL_SMOKE, img.toPNG());
+    console.log('smoke screenshot written:', process.env.TL_SMOKE);
+    smokeExit(0);
+  } catch (err) {
+    console.error('smoke capture failed:', err);
+    smokeExit(1);
+  }
 }
 
 function startEngine() {
@@ -129,6 +173,9 @@ function registerIpc() {
         await fs.promises.copyFile(src, r.filePath);
         return r.filePath;
       }
+      case 'smokeReady':
+        smokeCapture();
+        return null;
       case 'minimiseToPill':
       case 'restore':
         return null; // Task 8
@@ -174,6 +221,14 @@ function boot() {
     if (!p) return new Response('Not found', { status: 404 });
     return serveAudio(p, request.headers.get('range'));
   });
+  // Dev-only theme override until Settings > Theme exists (Task 9).
+  if (['light', 'dark', 'system'].includes(process.env.TL_THEME)) nativeTheme.themeSource = process.env.TL_THEME;
+  if (process.env.TL_SMOKE) {
+    setTimeout(() => {
+      console.error('smoke: renderer never signalled smokeReady');
+      smokeExit(1);
+    }, 20000).unref();
+  }
   registerIpc();
   startEngine();
   createWindow();
