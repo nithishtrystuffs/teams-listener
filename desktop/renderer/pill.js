@@ -8,6 +8,16 @@
   let st = null; // last state
   let base = 0; // performance.now() at elapsed 0
   let levels = { others: 0, me: 0 };
+  let lastSeq = null; // seq of the last applied state; older replies are stale
+  const { shouldApplyState, seqAfter } = window.TL;
+
+  function applyState(d) {
+    if (!shouldApplyState(lastSeq, d)) return;
+    lastSeq = seqAfter(lastSeq, d);
+    st = d;
+    base = performance.now() - (d.elapsed_s || 0) * 1000;
+    render();
+  }
 
   $('pmini').innerHTML = '<i></i>'.repeat(BARS);
 
@@ -44,12 +54,10 @@
     });
   }
 
-  api.on('state', (d) => {
-    if (!d || typeof d !== 'object') return;
-    st = d;
-    base = performance.now() - (d.elapsed_s || 0) * 1000;
-    render();
-  });
+  api.on('state', applyState);
+  // The restarted engine counts its seq from 0 again.
+  api.on('engine_exit', () => { lastSeq = -1; });
+  api.on('engine_failed', () => { lastSeq = -1; });
   api.on('levels', (d) => {
     levels = d || { others: 0, me: 0 };
     meters();
@@ -61,5 +69,5 @@
 
   setInterval(tick, 250);
   render();
-  api.call('status').then((d) => { if (d) { st = d; base = performance.now() - (d.elapsed_s || 0) * 1000; render(); } }).catch(() => {});
+  api.call('status').then(applyState).catch(() => {});
 })();

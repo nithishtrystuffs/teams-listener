@@ -147,3 +147,22 @@ test('settingsFromForm: a named mic and a model folder are kept', () => {
   assert.strictEqual(s.model_path, 'D:\m');
   assert.strictEqual(s.delete_audio_after, true);
 });
+
+test('shouldApplyState drops stale seq, applies missing seq and resets', () => {
+  const { shouldApplyState } = require('../renderer/lib/ui-helpers');
+  assert.strictEqual(shouldApplyState(5, { seq: 4 }), false);
+  assert.strictEqual(shouldApplyState(5, { seq: 5 }), true);
+  assert.strictEqual(shouldApplyState(5, { seq: 6 }), true);
+  assert.strictEqual(shouldApplyState(5, { recording: true }), true); // no seq: apply
+  assert.strictEqual(shouldApplyState(null, { seq: 0 }), true);
+  assert.strictEqual(shouldApplyState(9, { seq: -1 }), true); // engine gone: reset marker
+  assert.strictEqual(shouldApplyState(-1, { seq: 0 }), true); // fresh engine starts again at 0
+  assert.strictEqual(shouldApplyState(5, null), false);
+});
+
+test('seqAfter tracks the last applied seq', () => {
+  const { seqAfter } = require('../renderer/lib/ui-helpers');
+  assert.strictEqual(seqAfter(3, { seq: 7 }), 7);
+  assert.strictEqual(seqAfter(3, { recording: false }), 3);
+  assert.strictEqual(seqAfter(3, { seq: -1 }), -1);
+});

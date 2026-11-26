@@ -6,6 +6,7 @@ const { Readable } = require('node:stream');
 const { EngineClient } = require('./engine');
 const { resolveEngine, resolveAudio, isOpenableFolder } = require('./paths');
 const { trayModel, stateAfterEngineEvent } = require('./tray');
+const { shouldApplyState, seqAfter } = require('../renderer/lib/ui-helpers');
 const { loadUiState, saveUiState, pillPosition } = require('./ui-state');
 
 const RENDERER_ALLOW = new Set([
@@ -20,6 +21,7 @@ let outputDir = '';
 let pillWindow = null;
 let tray = null;
 let lastState = null; // last engine `state` forwarded to the windows
+let lastSeq = null; // its seq; a status reply older than it is stale
 let isQuitting = false;
 let uiState = { pill: null };
 const PILL_SIZE = { width: 340, height: 44 };
@@ -180,13 +182,17 @@ function createTray() {
   updateTray();
 }
 
+// Returns false (and changes nothing) for a stale status.
 function onState(data) {
+  if (!shouldApplyState(lastSeq, data)) return false;
+  lastSeq = seqAfter(lastSeq, data);
   const wasRec = isRecording();
   lastState = data;
   updateTray();
   const nowRec = isRecording();
   if (!nowRec) hidePill();
   else if (!wasRec && !(mainAlive() && mainWindow.isVisible() && !mainWindow.isMinimized())) showPill();
+  return true;
 }
 
 async function confirm(message, buttons, defaultId, cancelId, detail) {
@@ -358,7 +364,7 @@ function startEngine() {
   engine = new EngineClient({ spawn: spawnEngine, command, args, env: { ...process.env } });
   engine.on('event', (name, data) => {
     if (name === 'meetings_changed') refreshOutputDir();
-    if (name === 'state') onState(data);
+    if (name === 'state' && !onState(data)) return;
     broadcast(name, data);
   });
   engine.on('ready', () => {
@@ -366,10 +372,7 @@ function startEngine() {
     refreshOutputDir(true);
     // A (re)started engine emits no state until something changes, so resync every surface.
     engine.call('status').then((st) => {
-      if (st && typeof st === 'object') {
-        onState(st);
-        broadcast('state', st);
-      }
+      if (st && typeof st === 'object' && onState(st)) broadcast('state', st);
     }).catch((err) => console.error('status after ready failed:', err.message));
   });
   engine.on('failed', (info) => {

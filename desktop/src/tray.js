@@ -26,7 +26,8 @@ function trayModel(state) {
 // Engine lifecycle events that invalidate the last known state: a dead engine is not recording.
 function stateAfterEngineEvent(event, last) {
   if (event === 'exit' || event === 'failed') {
-    return { recording: false, muted: true, title: '', folder: null, elapsed_s: 0, nomic: false };
+    // seq -1: the next engine counts from 0 again, so the windows must not treat its states as stale.
+    return { recording: false, muted: true, title: '', folder: null, elapsed_s: 0, nomic: false, seq: -1 };
   }
   return last;
 }

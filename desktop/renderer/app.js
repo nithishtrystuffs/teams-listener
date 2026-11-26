@@ -5,6 +5,7 @@
   const {
     groupMeetings, fmtClock, fmtEta, escapeHtml, statusDot, timelineSegments, prettyHotkey,
     decideAfterRecordingEnded, transcribingResolved, settingsFromForm, DEFAULT_MIC_LABEL,
+    shouldApplyState, seqAfter,
   } = window.TL;
   const api = window.api;
   const $ = (id) => document.getElementById(id);
@@ -117,8 +118,10 @@
     return !!(store.status && store.status.recording);
   }
 
+  let lastSeq = null; // seq of the last applied status; replies older than it are stale
   function applyStatus(st) {
-    if (!st || typeof st !== 'object') return;
+    if (!shouldApplyState(lastSeq, st)) return;
+    lastSeq = seqAfter(lastSeq, st);
     const prev = store.status;
     const wasRec = !!(prev && prev.recording);
     store.status = st;
@@ -691,11 +694,13 @@
       scheduleMeetings();
     });
     api.on('engine_exit', () => {
+      lastSeq = -1; // the restarted engine counts its seq from 0 again
       showBanner('Recording engine stopped unexpectedly — your audio so far is saved');
       // The engine restarts on its own; pick up its fresh state shortly after.
       setTimeout(refreshAll, 3000);
     });
     api.on('engine_failed', (d) => {
+      lastSeq = -1;
       const cmd = (d && d.command) || 'engine';
       showBanner(`Couldn't start the recording engine (${cmd}). See %APPDATA%\\TeamsListener\\app.log.`);
     });

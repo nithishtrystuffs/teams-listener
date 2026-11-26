@@ -54,6 +54,7 @@ class Controller:
         self._clock = clock
         self._lock = threading.RLock()
         self._emit_lock = threading.Lock()  # orders `state` emits
+        self._seq = 0  # bumped for every `state` emit (under _emit_lock); lets UIs drop stale replies
         self._hk_lock = threading.Lock()
         self.settings: Settings = load_settings(settings_path)
 
@@ -89,8 +90,14 @@ class Controller:
                 "mic": mic, "outputs": list(rec.output_names), "nomic": mic is None}
 
     def status(self) -> dict:
-        with self._lock:
-            return self._status_locked()
+        """Current status with the seq of the last emitted `state`. Taking _emit_lock first means no
+        `state` emit is half-done, so the reply never carries a seq older than an event already sent.
+        Never call this while holding _lock (lock order is _emit_lock, then _lock)."""
+        with self._emit_lock:
+            with self._lock:
+                st = self._status_locked()
+                st["seq"] = self._seq
+                return st
 
     def _emit_state(self) -> dict:
         """Compute and emit `state` atomically w.r.t. other state emits, so the last one emitted is current.
@@ -98,7 +105,9 @@ class Controller:
         Also records the device snapshot so poll() doesn't repeat it."""
         with self._emit_lock:
             with self._lock:
+                self._seq += 1
                 st = self._status_locked()
+                st["seq"] = self._seq
                 self._last_devices = (st["mic"], tuple(st["outputs"])) if st["recording"] else None
             self._emit("state", st)
             return st
@@ -162,17 +171,17 @@ class Controller:
 
     def set_muted(self, muted: bool) -> dict:
         with self._lock:
-            if self._recorder is None:
-                return self._status_locked()
-            self._recorder.muted = bool(muted)
-        return self._emit_state()
+            idle = self._recorder is None
+            if not idle:
+                self._recorder.muted = bool(muted)
+        return self.status() if idle else self._emit_state()
 
     def toggle_mute(self) -> dict:
         with self._lock:
-            if self._recorder is None:
-                return self._status_locked()
-            self._recorder.muted = not self._recorder.muted
-        return self._emit_state()
+            idle = self._recorder is None
+            if not idle:
+                self._recorder.muted = not self._recorder.muted
+        return self.status() if idle else self._emit_state()
 
     def poll(self) -> None:
         """Call about every 100 ms."""

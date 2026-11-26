@@ -136,7 +136,23 @@
     };
   }
 
+  // Engine `state` events and status replies carry a monotonic `seq`. An RPC reply can reach a window
+  // after a newer `state` event, so a status with a lower seq than the last applied one is stale.
+  // No seq: apply (older engine, test fakes). Negative seq: the engine went away, a reset marker.
+  function shouldApplyState(lastSeq, st) {
+    if (!st || typeof st !== 'object') return false;
+    if (typeof st.seq !== 'number' || st.seq < 0) return true;
+    if (typeof lastSeq !== 'number') return true;
+    return st.seq >= lastSeq;
+  }
+
+  // The last-applied seq after applying st.
+  function seqAfter(lastSeq, st) {
+    return st && typeof st.seq === 'number' ? st.seq : lastSeq;
+  }
+
   return {
+    shouldApplyState, seqAfter,
     groupMeetings, fmtClock, fmtEta, escapeHtml, highlight, statusDot, timelineSegments,
     prettyHotkey, basename, audioUrl, decideAfterRecordingEnded, transcribingResolved,
     settingsFromForm, DEFAULT_MIC_LABEL,

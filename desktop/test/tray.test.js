@@ -59,3 +59,9 @@ test('other engine events leave state alone', () => {
   assert.strictEqual(stateAfterEngineEvent('ready', rec), rec);
   assert.strictEqual(stateAfterEngineEvent('exit', null).recording, false);
 });
+
+test('stateAfterEngineEvent marks a reset seq so the next engine is not ignored', () => {
+  const { stateAfterEngineEvent } = require('../src/tray');
+  assert.strictEqual(stateAfterEngineEvent('exit', { seq: 12 }).seq, -1);
+  assert.strictEqual(stateAfterEngineEvent('failed', { seq: 12 }).seq, -1);
+});

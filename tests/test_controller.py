@@ -446,3 +446,37 @@ def test_shutdown_stops_hotkey_worker(ctl):
     ctl.shutdown()
     worker.join(2)
     assert not worker.is_alive()
+
+
+def test_state_seq_increases_and_status_carries_latest(ctl):
+    assert ctl.status()["seq"] == 0
+    ctl.start("T")
+    ctl.toggle_mute()
+    ctl.set_muted(True)
+    seqs = [d["seq"] for n, d in ctl.events if n == "state"]
+    assert len(seqs) == 3 and seqs == sorted(seqs) and len(set(seqs)) == 3
+    assert ctl.status()["seq"] == seqs[-1]
+    assert ctl.toggle_mute()["seq"] == seqs[-1] + 1
+    ctl.stop()
+    assert ctl.toggle_mute()["seq"] == ctl.status()["seq"]  # idle: no emit, latest seq
+
+
+def test_status_seq_matches_last_emitted_under_contention(ctl):
+    ctl.start("T")
+    stop = threading.Event()
+
+    def hammer():
+        while not stop.is_set():
+            ctl.toggle_mute()
+
+    t = threading.Thread(target=hammer)
+    t.start()
+    try:
+        for _ in range(200):
+            st = ctl.status()
+            emitted = [d["seq"] for n, d in list(ctl.events) if n == "state"]
+            assert st["seq"] <= emitted[-1]
+            assert st["seq"] in emitted
+    finally:
+        stop.set()
+        t.join(5)
