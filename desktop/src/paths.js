@@ -34,4 +34,16 @@ function resolveAudio(outputDir, url) {
   }
 }
 
-module.exports = { resolveEngine, resolveAudio, isInside };
+// Resolved path if p is an existing directory strictly inside outputDir, else null.
+async function isOpenableFolder(outputDir, p, statFn) {
+  try {
+    if (typeof p !== 'string' || !isInside(outputDir, p)) return null;
+    const resolved = path.resolve(p);
+    const st = await statFn(resolved);
+    return st.isDirectory() ? resolved : null;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { resolveEngine, resolveAudio, isInside, isOpenableFolder };

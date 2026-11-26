@@ -1,10 +1,10 @@
-const { app, BrowserWindow, ipcMain, protocol, net, clipboard, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, clipboard, dialog, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
-const { pathToFileURL } = require('node:url');
+const { Readable } = require('node:stream');
 const { EngineClient } = require('./engine');
-const { resolveEngine, resolveAudio, isInside } = require('./paths');
+const { resolveEngine, resolveAudio, isOpenableFolder } = require('./paths');
 
 const RENDERER_ALLOW = new Set([
   'status', 'start', 'stop', 'set_muted', 'toggle_mute', 'list_meetings', 'get_meeting',
@@ -107,8 +107,9 @@ function registerIpc() {
         return null;
       case 'openFolder': {
         const p = payload && (payload.path || payload.folder);
-        if (typeof p !== 'string' || !isInside(outputDir, p)) throw new Error('not allowed: path');
-        const err = await shell.openPath(path.resolve(p));
+        const dir = await isOpenableFolder(outputDir, p, fs.promises.stat);
+        if (!dir) throw new Error('not a folder');
+        const err = await shell.openPath(dir);
         return err || null;
       }
       case 'pickFolder': {
@@ -117,10 +118,11 @@ function registerIpc() {
       }
       case 'exportMarkdown': {
         const folder = payload && payload.folder;
-        if (typeof folder !== 'string' || !isInside(outputDir, folder)) throw new Error('not allowed: folder');
-        const src = path.join(folder, 'transcript.md');
+        const dir = await isOpenableFolder(outputDir, folder, fs.promises.stat);
+        if (!dir) throw new Error('not a folder');
+        const src = path.join(dir, 'transcript.md');
         const r = await dialog.showSaveDialog(mainWindow || undefined, {
-          defaultPath: path.basename(folder) + '.md',
+          defaultPath: path.basename(dir) + '.md',
           filters: [{ name: 'Markdown', extensions: ['md'] }],
         });
         if (r.canceled || !r.filePath) return null;
@@ -136,11 +138,41 @@ function registerIpc() {
   });
 }
 
+// net.fetch(file URL) ignores Range, so serve ranges ourselves to keep <audio> seeking working.
+async function serveAudio(p, range) {
+  let size;
+  try {
+    size = (await fs.promises.stat(p)).size;
+  } catch {
+    return new Response('Not found', { status: 404 });
+  }
+  const base = { 'Content-Type': 'audio/flac', 'Accept-Ranges': 'bytes' };
+  const mt = range && /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+  if (!mt || (mt[1] === '' && mt[2] === '')) {
+    return new Response(Readable.toWeb(fs.createReadStream(p)), { status: 200, headers: { ...base, 'Content-Length': String(size) } });
+  }
+  let start; let end;
+  if (mt[1] === '') { // suffix range
+    start = Math.max(0, size - Number(mt[2]));
+    end = size - 1;
+  } else {
+    start = Number(mt[1]);
+    end = mt[2] === '' ? size - 1 : Math.min(Number(mt[2]), size - 1);
+  }
+  if (start >= size || start > end) {
+    return new Response('Range not satisfiable', { status: 416, headers: { ...base, 'Content-Range': 'bytes */' + size } });
+  }
+  return new Response(Readable.toWeb(fs.createReadStream(p, { start, end })), {
+    status: 206,
+    headers: { ...base, 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${size}` },
+  });
+}
+
 function boot() {
-  protocol.handle('app-audio', (request) => {
+  protocol.handle('app-audio', async (request) => {
     const p = resolveAudio(outputDir, request.url);
     if (!p) return new Response('Not found', { status: 404 });
-    return net.fetch(pathToFileURL(p).toString(), { headers: request.headers });
+    return serveAudio(p, request.headers.get('range'));
   });
   registerIpc();
   startEngine();

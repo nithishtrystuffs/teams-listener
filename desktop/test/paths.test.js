@@ -46,3 +46,13 @@ test('isInside', () => {
   assert.ok(!isInside(out, path.join(out, '..', 'x')));
   assert.ok(!isInside('', path.join(out, 'a')));
 });
+
+test('isOpenableFolder', async () => {
+  const { isOpenableFolder } = require('../src/paths');
+  const stat = async (p) => ({ isDirectory: () => !p.endsWith('.exe') });
+  assert.strictEqual(await isOpenableFolder(out, path.join(out, 'a'), stat), path.join(out, 'a'));
+  assert.strictEqual(await isOpenableFolder(out, path.join(out, 'a', 'x.exe'), stat), null);
+  assert.strictEqual(await isOpenableFolder(out, 'C:\Windows', stat), null);
+  const missing = async () => { throw new Error('ENOENT'); };
+  assert.strictEqual(await isOpenableFolder(out, path.join(out, 'a'), missing), null);
+});

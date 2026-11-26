@@ -140,3 +140,17 @@ test('crash loop (5 in 60s) emits failed and stops restarting', async () => {
   assert.strictEqual(f.children.length, 5);
   assert.deepStrictEqual(failed, [{ command: 'py', message: 'engine keeps crashing' }]);
 });
+
+test('multibyte utf-8 split across chunks is decoded intact', async () => {
+  const { f, e } = mk(); e.start();
+  const got = [];
+  e.on('event', (n) => got.push(n));
+  const buf = Buffer.from('{"event":"\u00e9","data":{}}\n');
+  const i = buf.indexOf(0xc3) + 1;
+  f.children[0].stdout.write(buf.subarray(0, i));
+  await tick();
+  f.children[0].stdout.write(buf.subarray(i));
+  await tick();
+  assert.deepStrictEqual(got, ['\u00e9']);
+  await e.stop();
+});

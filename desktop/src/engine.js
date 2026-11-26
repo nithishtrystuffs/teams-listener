@@ -39,6 +39,7 @@ class EngineClient extends EventEmitter {
       return;
     }
     this._child = child;
+    child.stdout.setEncoding('utf8');
     child.stdout.on('data', (d) => this._onData(d));
     child.stdout.on('error', () => {});
     child.stderr.on('data', (d) => console.error('[engine]', d.toString().trimEnd()));
@@ -64,7 +65,7 @@ class EngineClient extends EventEmitter {
   }
 
   _onData(chunk) {
-    this._buf += chunk.toString('utf8');
+    this._buf += chunk;
     let i;
     while ((i = this._buf.indexOf('\n')) >= 0) {
       const line = this._buf.slice(0, i).trim();
