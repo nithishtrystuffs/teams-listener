@@ -153,3 +153,34 @@ def test_main_redirects_stray_prints(monkeypatch):
     data = stdout.getvalue().decode("utf-8")
     assert "noise" not in data
     assert json.loads(data.splitlines()[0])["ok"] is True
+
+
+def test_unhashable_cmd_gets_error_and_loop_continues():
+    inp = ('{"id":1,"cmd":["x"]}\n{"id":2,"cmd":{}}\n{"id":3,"cmd":"status"}\n')
+    s, h, out = make(inp)
+    s.serve()
+    r = lines(out)
+    assert [(m["id"], m["ok"]) for m in r] == [(1, False), (2, False), (3, True)]
+    assert h["c"].shutdowns == 1
+
+
+def test_invalid_utf8_stdin_survives():
+    stdin = io.BytesIO(b'\xff\xfe garbage\n{"id":1,"cmd":"status"}\n')
+    stdout = io.BytesIO()
+    holder = {}
+
+    def factory(emit):
+        holder["c"] = FakeController(emit)
+        return holder["c"]
+
+    server.main(stdin=stdin, stdout=stdout, controller_factory=factory)
+    r = [json.loads(x) for x in stdout.getvalue().decode("utf-8").splitlines()]
+    assert len(r) == 2 and r[0]["ok"] is False and r[1]["ok"] is True
+    assert holder["c"].shutdowns == 1
+
+
+def test_eof_mid_stream_after_start_shuts_down_once():
+    s, h, out = make('{"id":1,"cmd":"start","args":{"title":"t"}}\n')
+    s.serve()
+    assert h["c"].calls == [("start", "t")]
+    assert h["c"].shutdowns == 1

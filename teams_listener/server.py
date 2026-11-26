@@ -58,7 +58,7 @@ class Server:
             return {"id": None, "ok": False, "error": "bad request"}
         rid = req.get("id")
         cmd = req.get("cmd")
-        if cmd not in COMMANDS:
+        if not isinstance(cmd, str) or cmd not in COMMANDS:
             return {"id": rid, "ok": False, "error": f"unknown command: {cmd}"}
         args = req.get("args") or {}
         try:
@@ -104,7 +104,7 @@ def main(stdin=None, stdout=None, controller_factory=None) -> None:
     _setup_logging()
     raw_in = stdin if stdin is not None else sys.stdin.buffer
     raw_out = stdout if stdout is not None else sys.stdout.buffer
-    inp = io.TextIOWrapper(raw_in, encoding="utf-8")
+    inp = io.TextIOWrapper(raw_in, encoding="utf-8", errors="replace")
     out = io.TextIOWrapper(raw_out, encoding="utf-8", newline="\n")
     # Stray prints must not corrupt the protocol stream.
     sys.stdout = sys.stderr if sys.stderr is not None else open(os.devnull, "w")
