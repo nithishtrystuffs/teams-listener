@@ -92,6 +92,47 @@
     </div>
   </section>
 </div>
+<dialog class="dlg" id="settings-dlg" aria-labelledby="sd-title">
+  <form id="settings-form" novalidate>
+    <h2 id="sd-title">Settings</h2>
+    <div class="fields">
+      <div class="field">
+        <label for="s-model">Transcription model</label>
+        <select id="s-model"><option value="small.en">small.en</option><option value="medium.en">medium.en</option></select>
+        <div class="help">small.en is faster; medium.en is more accurate (much slower on this laptop).</div>
+      </div>
+      <div class="field">
+        <label for="s-model-path">Model folder (optional)</label>
+        <div class="pick"><input id="s-model-path" spellcheck="false" autocomplete="off"><button class="btn" id="s-model-path-pick" type="button" title="Choose folder" aria-label="Choose model folder">…</button></div>
+      </div>
+      <div class="field">
+        <label for="s-mic">Microphone</label>
+        <select id="s-mic"></select>
+        <div class="help" id="s-mic-note" hidden>Changes to the microphone apply to the next recording.</div>
+      </div>
+      <div class="field">
+        <label for="s-hotkey">Mute shortcut</label>
+        <input id="s-hotkey" spellcheck="false" autocomplete="off" aria-describedby="s-hotkey-err">
+        <div class="ferr" id="s-hotkey-err" role="alert" hidden></div>
+      </div>
+      <label class="check"><input type="checkbox" id="s-follow"><span>Also toggle when Teams' Ctrl+Shift+M is pressed (can drift out of sync if you click Teams' mute button)</span></label>
+      <label class="check"><input type="checkbox" id="s-delete"><span>Delete audio after a successful transcription</span></label>
+      <div class="field">
+        <label for="s-out">Save meetings in</label>
+        <div class="pick"><input id="s-out" spellcheck="false" autocomplete="off"><button class="btn" id="s-out-pick" type="button" title="Choose folder" aria-label="Choose meetings folder">…</button></div>
+      </div>
+      <div class="field">
+        <label for="s-theme">Theme</label>
+        <select id="s-theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
+      </div>
+    </div>
+    <div class="ferr bottom" id="s-error" role="alert" hidden></div>
+    <div class="dlg-actions">
+      <button class="btn" id="s-cancel" type="button">Cancel</button>
+      <button class="btn primary" id="s-save" type="submit">Save</button>
+    </div>
+  </form>
+</dialog>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="lib/ui-helpers.js"></script>
 <script src="views/transcript.js"></script>

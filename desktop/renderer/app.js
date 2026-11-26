@@ -4,7 +4,7 @@
 (() => {
   const {
     groupMeetings, fmtClock, fmtEta, escapeHtml, statusDot, timelineSegments, prettyHotkey,
-    decideAfterRecordingEnded, transcribingResolved,
+    decideAfterRecordingEnded, transcribingResolved, settingsFromForm, DEFAULT_MIC_LABEL,
   } = window.TL;
   const api = window.api;
   const $ = (id) => document.getElementById(id);
@@ -309,6 +309,97 @@
     }
   }
 
+  // ---- settings dialog ------------------------------------------------------
+  const SF = {
+    model: 's-model', model_path: 's-model-path', hotkey: 's-hotkey', out: 's-out', theme: 's-theme',
+  };
+  let settingsSaving = false;
+
+  function setFieldError(el, msg) {
+    el.textContent = msg || '';
+    el.hidden = !msg;
+  }
+
+  async function openSettings() {
+    const dlg = $('settings-dlg');
+    if (dlg.open) return;
+    setFieldError($('s-hotkey-err'), '');
+    setFieldError($('s-error'), '');
+    await refreshSettings();
+    const s = store.settings || {};
+    const mics = await call('list_mics');
+    const names = Array.isArray(mics) ? mics.slice() : [];
+    if (s.mic_device && !names.includes(s.mic_device)) names.push(s.mic_device); // keep a saved but unplugged mic
+    $('s-mic').innerHTML = [DEFAULT_MIC_LABEL, ...names]
+      .map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    $(SF.model).value = s.model || 'small.en';
+    $(SF.model_path).value = s.model_path || '';
+    $('s-mic').value = s.mic_device || DEFAULT_MIC_LABEL;
+    $(SF.hotkey).value = s.hotkey || '';
+    $('s-follow').checked = !!s.follow_teams_shortcut;
+    $('s-delete').checked = !!s.delete_audio_after;
+    $(SF.out).value = s.output_dir || '';
+    $(SF.theme).value = s.theme || 'system';
+    $('s-mic-note').hidden = !isRecording();
+    settingsSaving = false;
+    $('s-save').disabled = false;
+    if (dlg.open) return; // a second click while the lists were loading
+    dlg.showModal();
+    $(SF.model).focus();
+  }
+
+  function closeSettings() {
+    if ($('settings-dlg').open) $('settings-dlg').close();
+  }
+
+  async function pickInto(id) {
+    const dir = await ui('pickFolder');
+    if (dir) $(id).value = dir;
+  }
+
+  async function saveSettings() {
+    if (settingsSaving) return;
+    settingsSaving = true;
+    $('s-save').disabled = true;
+    setFieldError($('s-hotkey-err'), '');
+    setFieldError($('s-error'), '');
+    try {
+      const form = settingsFromForm({
+        model: $(SF.model).value, model_path: $(SF.model_path).value, mic: $('s-mic').value,
+        hotkey: $(SF.hotkey).value, follow_teams_shortcut: $('s-follow').checked,
+        delete_audio_after: $('s-delete').checked, output_dir: $(SF.out).value, theme: $(SF.theme).value,
+      });
+      let saved;
+      try {
+        saved = await api.call('save_settings', form);
+      } catch (err) {
+        const msg = errText(err);
+        setFieldError(/shortcut/i.test(msg) ? $('s-hotkey-err') : $('s-error'), msg);
+        return;
+      }
+      store.settings = saved && typeof saved === 'object' ? saved : form;
+      closeSettings();
+      ui('setTheme', { theme: store.settings.theme || form.theme });
+      refreshMeetings(); // output_dir may have changed
+      render(); // footer model label and the idle hotkey hint
+    } finally {
+      settingsSaving = false;
+      $('s-save').disabled = false;
+    }
+  }
+
+  function wireSettings() {
+    $('settings-link').addEventListener('click', openSettings);
+    $('settings-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      saveSettings();
+    });
+    $('s-cancel').addEventListener('click', closeSettings);
+    $('s-model-path-pick').addEventListener('click', () => pickInto(SF.model_path));
+    $('s-out-pick').addEventListener('click', () => pickInto(SF.out));
+    // Esc closes a modal <dialog> natively and focus stays trapped inside it.
+  }
+
   // ---- search ---------------------------------------------------------------
   let searchSeq = 0;
   let searchTimer = null;
@@ -529,7 +620,7 @@
     $('stop-btn').addEventListener('click', stopRecording);
     $('mute').addEventListener('click', toggleMute);
     $('pill-btn').addEventListener('click', () => ui('minimiseToPill'));
-    $('settings-link').addEventListener('click', () => {}); // Settings dialog arrives in Task 9.
+    wireSettings();
 
     $('list').addEventListener('click', (e) => {
       const el = e.target.closest('.item');
@@ -637,6 +728,7 @@
       if (newest) await openMeeting(newest.folder);
     }
     if (params.get('smokeIdle')) $('bigbtn').click(); // reach Idle the way a user would
+    if (params.get('smokeSettings')) await openSettings();
     requestAnimationFrame(() => api.ui('smokeReady').catch(() => {}));
   }
 

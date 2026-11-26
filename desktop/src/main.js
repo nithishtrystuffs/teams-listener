@@ -41,10 +41,18 @@ function broadcast(name, data) {
   }
 }
 
-async function refreshOutputDir() {
+const THEMES = ['system', 'light', 'dark'];
+function applyTheme(theme) {
+  // TL_THEME is a dev-only override for smoke screenshots.
+  const t = THEMES.includes(process.env.TL_THEME) ? process.env.TL_THEME : theme;
+  if (THEMES.includes(t)) nativeTheme.themeSource = t;
+}
+
+async function refreshOutputDir(applyThemeToo = false) {
   try {
     const s = await engine.call('get_settings');
     if (s && typeof s.output_dir === 'string') outputDir = s.output_dir;
+    if (applyThemeToo && s) applyTheme(s.theme);
   } catch (err) {
     console.error('get_settings failed:', err.message);
   }
@@ -288,6 +296,7 @@ function createWindow() {
   const query = {};
   if (process.env.TL_SMOKE_OPEN) query.smokeOpen = '1';
   if (process.env.TL_SMOKE_IDLE) query.smokeIdle = '1';
+  if (process.env.TL_SMOKE_SETTINGS) query.smokeSettings = '1';
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
 }
 
@@ -353,7 +362,7 @@ function startEngine() {
   });
   engine.on('ready', () => {
     console.log('engine ready');
-    refreshOutputDir();
+    refreshOutputDir(true);
     // A (re)started engine emits no state until something changes, so resync every surface.
     engine.call('status').then((st) => {
       if (st && typeof st === 'object') {
@@ -412,6 +421,12 @@ function registerIpc() {
         await fs.promises.copyFile(src, r.filePath);
         return r.filePath;
       }
+      case 'setTheme': {
+        const t = payload && payload.theme;
+        if (!THEMES.includes(t)) throw new Error('invalid theme');
+        applyTheme(t);
+        return null;
+      }
       case 'smokeReady':
         smokeCapture();
         return null;
@@ -468,8 +483,7 @@ function boot() {
     if (!p) return new Response('Not found', { status: 404 });
     return serveAudio(p, request.headers.get('range'));
   });
-  // Dev-only theme override until Settings > Theme exists (Task 9).
-  if (['light', 'dark', 'system'].includes(process.env.TL_THEME)) nativeTheme.themeSource = process.env.TL_THEME;
+  applyTheme(); // only the dev override here; the saved theme is applied once the engine is ready
   if (process.env.TL_SMOKE) {
     setTimeout(() => {
       console.error('smoke: renderer never signalled smokeReady');

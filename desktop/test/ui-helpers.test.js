@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   groupMeetings, fmtClock, fmtEta, highlight, statusDot, timelineSegments, prettyHotkey, audioUrl,
-  decideAfterRecordingEnded, transcribingResolved,
+  decideAfterRecordingEnded, transcribingResolved, settingsFromForm, DEFAULT_MIC_LABEL,
 } = require('../renderer/lib/ui-helpers');
 
 const now = new Date(2026, 10, 26, 15, 0, 0); // local time, Thu 26 Nov 2026
@@ -126,4 +126,24 @@ test('transcribingResolved: leave Transcribing only when the engine has nothing 
   assert.strictEqual(transcribingResolved(it('transcribing'), null), false);
   assert.strictEqual(transcribingResolved(it('recording'), null), false);
   assert.strictEqual(transcribingResolved(null, null), false);
+});
+
+test('settingsFromForm: default mic -> null, empty model folder -> null, theme kept, strings trimmed', () => {
+  const s = settingsFromForm({
+    model: 'small.en', model_path: '  ', mic: DEFAULT_MIC_LABEL, hotkey: ' <ctrl>+<alt>+m ',
+    follow_teams_shortcut: true, delete_audio_after: false, output_dir: ' C:\Meetings ', theme: 'dark',
+  });
+  assert.deepStrictEqual(s, {
+    model: 'small.en', model_path: null, mic_device: null, hotkey: '<ctrl>+<alt>+m',
+    follow_teams_shortcut: true, delete_audio_after: false, output_dir: 'C:\Meetings', theme: 'dark',
+  });
+  assert.strictEqual(DEFAULT_MIC_LABEL, 'Default communications mic');
+});
+
+test('settingsFromForm: a named mic and a model folder are kept', () => {
+  const s = settingsFromForm({ model: 'medium.en', model_path: ' D:\m ', mic: 'USB Mic', hotkey: 'x',
+    follow_teams_shortcut: false, delete_audio_after: true, output_dir: 'D:\o', theme: 'light' });
+  assert.strictEqual(s.mic_device, 'USB Mic');
+  assert.strictEqual(s.model_path, 'D:\m');
+  assert.strictEqual(s.delete_audio_after, true);
 });

@@ -156,6 +156,27 @@ mark{background:color-mix(in srgb,var(--amber) 38%,transparent);color:inherit;bo
 .placeholder{padding:40px 8px;text-align:center;color:var(--muted)}
 .placeholder .btn{margin-top:12px}
 
+/* settings dialog */
+.dlg{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--text);padding:0;width:min(520px,calc(100vw - 40px));max-height:calc(100vh - 40px);box-shadow:0 24px 60px rgba(0,0,0,.35);user-select:text;overflow:hidden}
+.dlg[open]{display:flex;flex-direction:column}
+.dlg::backdrop{background:rgba(0,0,0,.38)}
+.dlg form{display:flex;flex-direction:column;min-height:0;margin:0}
+.dlg h2{margin:0;padding:18px 22px 6px;font-size:18px;font-weight:650}
+.fields{padding:8px 22px 4px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;min-height:0}
+.field label{display:block;font-weight:600;margin-bottom:5px}
+.field input,.field select{width:100%;font:inherit;color:var(--text);background:var(--win);border:1px solid var(--line);border-radius:8px;padding:7px 10px;outline:none}
+.field input:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.field select option{background:var(--card);color:var(--text)}
+.field .help{color:var(--muted);font-size:12px;margin-top:5px}
+.pick{display:flex;gap:8px}
+.pick .btn{padding:6px 12px}
+.check{display:flex;gap:10px;align-items:flex-start;cursor:pointer;line-height:1.4}
+.check input{margin:2px 0 0;width:16px;height:16px;flex:none;accent-color:var(--accent)}
+.ferr{color:var(--red);font-size:12px;margin-top:5px}
+.ferr.bottom{margin:10px 22px 0}
+.dlg-actions{display:flex;justify-content:flex-end;gap:8px;padding:14px 22px 18px}
+.dlg-actions .btn{padding:7px 16px;font-size:13px}
+
 /* toasts */
 .toasts{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:20;pointer-events:none}
 .toast{max-width:380px;padding:10px 14px;border-radius:8px;background:var(--toast);color:var(--toast-text);font-size:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);animation:tin .18s ease-out}

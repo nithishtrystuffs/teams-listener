@@ -119,8 +119,26 @@
     return `app-audio://meeting/${encodeURIComponent(basename(folder))}/${track}.flac`;
   }
 
+  const DEFAULT_MIC_LABEL = 'Default communications mic';
+
+  // Form field values -> the dict save_settings expects.
+  function settingsFromForm(f) {
+    const str = (v) => String(v ?? '').trim();
+    return {
+      model: str(f.model),
+      model_path: str(f.model_path) || null,
+      mic_device: !str(f.mic) || str(f.mic) === DEFAULT_MIC_LABEL ? null : str(f.mic),
+      hotkey: str(f.hotkey),
+      follow_teams_shortcut: !!f.follow_teams_shortcut,
+      delete_audio_after: !!f.delete_audio_after,
+      output_dir: str(f.output_dir),
+      theme: str(f.theme),
+    };
+  }
+
   return {
     groupMeetings, fmtClock, fmtEta, escapeHtml, highlight, statusDot, timelineSegments,
     prettyHotkey, basename, audioUrl, decideAfterRecordingEnded, transcribingResolved,
+    settingsFromForm, DEFAULT_MIC_LABEL,
   };
 }));
