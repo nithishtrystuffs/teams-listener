@@ -151,8 +151,10 @@ def test_mute_when_idle_is_noop(ctl):
 
 def test_hotkey_toggles_mute(ctl):
     ctl.start("T")
+    ctl.events.clear()
     ctl.made["hk"].on_toggle()
     assert ctl.made["rec"].muted is False and ctl.made["hk"].started
+    assert ctl.events[-1][0] == "state" and ctl.events[-1][1]["muted"] is False
 
 
 def test_poll_emits_levels_and_state_on_mic_change(ctl):
@@ -242,7 +244,8 @@ def test_done_and_error_events(ctl):
 def test_shutdown_while_recording_saves_meta(ctl):
     folder = Path(ctl.start("T")["folder"])
     ctl.shutdown()
-    assert read_meta(folder).end is not None
+    meta = read_meta(folder)
+    assert meta.end is not None and meta.events == EVENTS and meta.devices == ["Speakers", "Mic A"]
     assert ctl.made["rec"].stopped and ctl.made["hk"].stopped and ctl.made["queue"].shut
 
 
@@ -277,3 +280,91 @@ def test_invalid_hotkey_at_construction_runs_without(tmp_path):
                    recorder_factory=lambda f, m: FakeRecorder(f, m),
                    queue_factory=lambda *a: FakeQueue(*a), hotkeys_factory=boom)
     assert c.status()["recording"] is False
+
+
+def test_start_failure_after_pause_resumes_and_clears(ctl):
+    def factory(folder, mic):
+        r = FakeRecorder(folder, mic)
+
+        def boom():
+            raise OSError("no device")
+
+        r.start = boom
+        return r
+
+    ctl._recorder_factory = factory
+    with pytest.raises(OSError):
+        ctl.start("x")
+    assert ctl.made["queue"].paused is False
+    assert ctl.status()["recording"] is False
+
+
+def test_start_during_stop_tail_keeps_new_recording(ctl):
+    gate, entered = threading.Event(), threading.Event()
+    count = []
+
+    def factory(folder, mic):
+        r = FakeRecorder(folder, mic)
+        ctl.made["rec"] = r
+        count.append(r)
+        if len(count) == 1:
+            orig = r.stop
+
+            def slow_stop():
+                entered.set()
+                gate.wait(5)
+                return orig()
+
+            r.stop = slow_stop
+        return r
+
+    ctl._recorder_factory = factory
+    first = Path(ctl.start("one")["folder"])
+    stopper = threading.Thread(target=ctl.stop)
+    stopper.start()
+    assert entered.wait(5)
+    second = Path(ctl.start("two")["folder"])
+    gate.set()
+    stopper.join(5)
+    st = ctl.status()
+    assert st["recording"] and st["folder"] == str(second) and st["title"] == "two"
+    assert read_meta(first).end is not None
+    ctl.stop()
+    assert read_meta(second).end is not None
+
+
+def test_noncanonical_output_dir_identity(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    save_settings(Settings(output_dir=str(tmp_path / "x" / ".." / "out")), tmp_path / "s.json")
+    made = {}
+
+    def qf(*a):
+        made["q"] = FakeQueue(*a)
+        return made["q"]
+
+    c = Controller(lambda n, d: None, settings_path=tmp_path / "s.json",
+                   recorder_factory=lambda f, m: FakeRecorder(f, m), queue_factory=qf,
+                   hotkeys_factory=lambda *a: FakeHotkeys(*a))
+    folder = Path(c.start("T")["folder"])
+    with pytest.raises(RuntimeError, match="still recording"):
+        c.transcribe_again(folder.name)
+    c.stop()
+    c.transcribe_again(folder.name)
+    assert made["q"].submitted == [folder]
+    assert {i["status"] for i in c.list_meetings()} == {"queued"}
+
+
+def test_last_state_matches_status_under_contention(ctl):
+    ctl.start("T")
+    ctl.events.clear()
+
+    def hammer():
+        for _ in range(200):
+            ctl.toggle_mute()
+
+    ts = [threading.Thread(target=hammer) for _ in range(2)]
+    [x.start() for x in ts]
+    [x.join() for x in ts]
+    last = [d for n, d in ctl.events if n == "state"][-1]
+    assert last["muted"] == ctl.status()["muted"]

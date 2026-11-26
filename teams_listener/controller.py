@@ -52,6 +52,8 @@ class Controller:
         self._mic_lister = mic_lister
         self._clock = clock
         self._lock = threading.RLock()
+        self._emit_lock = threading.Lock()  # orders `state` emits
+        self._hk_lock = threading.Lock()
         self.settings: Settings = load_settings(settings_path)
 
         self._recorder = None
@@ -84,21 +86,28 @@ class Controller:
         with self._lock:
             return self._status_locked()
 
-    def _state_payload(self) -> dict:
-        """Status for a `state` event; also records the device snapshot so poll() doesn't repeat it."""
-        with self._lock:
-            st = self._status_locked()
-            self._last_devices = (st["mic"], tuple(st["outputs"])) if st["recording"] else None
+    def _emit_state(self) -> dict:
+        """Compute and emit `state` atomically w.r.t. other state emits, so the last one emitted is current.
+
+        Also records the device snapshot so poll() doesn't repeat it."""
+        with self._emit_lock:
+            with self._lock:
+                st = self._status_locked()
+                self._last_devices = (st["mic"], tuple(st["outputs"])) if st["recording"] else None
+            self._emit("state", st)
             return st
 
     # ---- recording ---------------------------------------------------------
+    def _root(self) -> Path:
+        return Path(self.settings.output_dir).resolve()
+
     def start(self, title: str = "Meeting") -> dict:
         with self._lock:
             if self._recorder is not None:
                 raise RuntimeError("Already recording.")
             now = datetime.now()
             title = (title or "").strip() or "Meeting"
-            folder = make_meeting_dir(Path(self.settings.output_dir), now, title)
+            folder = make_meeting_dir(self._root(), now, title)
             meta = MeetingMeta(title, now.replace(microsecond=0))
             write_meta(folder, meta)
             try:
@@ -112,8 +121,7 @@ class Controller:
             self._recorder, self._folder, self._meta, self._title = rec, folder, meta, title
             self._started_at = self._clock()
         self._emit("meetings_changed", {})
-        self._emit("state", self._state_payload())
-        return self.status()
+        return self._emit_state()
 
     def _finish_recording(self) -> Path | None:
         """Detach and stop the recorder, write meta. Returns the folder, or None when not recording."""
@@ -121,21 +129,19 @@ class Controller:
             rec, folder, meta = self._recorder, self._folder, self._meta
             if rec is None:
                 return None
-            self._recorder = None
+            self._recorder = self._folder = self._meta = self._title = None
         summary = rec.stop()
         meta.end = datetime.now().replace(microsecond=0)
         meta.devices = summary.devices
         meta.events = summary.events
         write_meta(folder, meta)
-        with self._lock:
-            self._folder = self._meta = self._title = None
         return folder
 
     def stop(self) -> dict:
         folder = self._finish_recording()
         if folder is None:
             return {"folder": None}
-        self._emit("state", self._state_payload())
+        self._emit_state()
         self._queue.resume()
         self._submit(folder)
         return {"folder": str(folder)}
@@ -145,18 +151,14 @@ class Controller:
             if self._recorder is None:
                 return self._status_locked()
             self._recorder.muted = bool(muted)
-        st = self._state_payload()
-        self._emit("state", st)
-        return st
+        return self._emit_state()
 
     def toggle_mute(self) -> dict:
         with self._lock:
             if self._recorder is None:
                 return self._status_locked()
             self._recorder.muted = not self._recorder.muted
-        st = self._state_payload()
-        self._emit("state", st)
-        return st
+        return self._emit_state()
 
     def poll(self) -> None:
         """Call about every 100 ms."""
@@ -169,7 +171,7 @@ class Controller:
             changed = snapshot != self._last_devices
         self._emit("levels", {"others": levels["others"], "me": levels["me"]})
         if changed:
-            self._emit("state", self._state_payload())
+            self._emit_state()
 
     # ---- transcription -----------------------------------------------------
     def _submit(self, folder: Path) -> None:
@@ -211,7 +213,7 @@ class Controller:
         self._emit("meetings_changed", {})
 
     def transcribe_again(self, folder: str) -> dict:
-        f = resolve_meeting(Path(self.settings.output_dir), folder)
+        f = resolve_meeting(self._root(), folder)
         with self._lock:
             if self._recorder is not None and f == self._folder:
                 raise RuntimeError("This meeting is still recording.")
@@ -224,8 +226,7 @@ class Controller:
 
     # ---- meetings ----------------------------------------------------------
     def list_meetings(self) -> list[dict]:
-        out_dir = Path(self.settings.output_dir)
-        entries = list_meetings(out_dir)
+        entries = list_meetings(self._root())
         with self._lock:
             rec_folder = self._folder if self._recorder is not None else None
             rec_title = self._title
@@ -254,10 +255,10 @@ class Controller:
         return items
 
     def get_meeting(self, folder: str) -> dict:
-        return meeting_details(resolve_meeting(Path(self.settings.output_dir), folder))
+        return meeting_details(resolve_meeting(self._root(), folder))
 
     def search(self, query: str) -> list[dict]:
-        return search_meetings(Path(self.settings.output_dir), query)
+        return search_meetings(self._root(), query)
 
     # ---- settings ----------------------------------------------------------
     def get_settings(self) -> dict:
@@ -266,19 +267,25 @@ class Controller:
     def list_mics(self) -> list[str]:
         return list(self._mic_lister())
 
-    def _restart_hotkeys(self) -> None:
-        if self._hotkeys is not None:
+    def _stop_hotkeys(self) -> None:
+        with self._hk_lock:
+            hk, self._hotkeys = self._hotkeys, None
+        if hk is not None:
             try:
-                self._hotkeys.stop()
+                hk.stop()
             except Exception:  # noqa: BLE001
                 log.exception("stopping hotkeys failed")
-            self._hotkeys = None
+
+    def _restart_hotkeys(self) -> None:
+        self._stop_hotkeys()
+        s = self.settings
         try:
-            hk = self._hotkeys_factory(self.settings.hotkey, self.settings.follow_teams_shortcut, self.toggle_mute)
+            hk = self._hotkeys_factory(s.hotkey, s.follow_teams_shortcut, self.toggle_mute)
             hk.start()
-            self._hotkeys = hk
+            with self._hk_lock:
+                self._hotkeys = hk
         except ValueError:
-            log.warning("invalid hotkey %r; running without hotkeys", self.settings.hotkey)
+            log.warning("invalid hotkey %r; running without hotkeys", s.hotkey)
 
     def save_settings(self, d: dict) -> dict:
         from pynput.keyboard import HotKey
@@ -307,17 +314,16 @@ class Controller:
         save_settings(new, self._settings_path)
         with self._lock:
             self.settings = new
-            self._restart_hotkeys()
+        self._restart_hotkeys()
         self._emit("meetings_changed", {})
         return self.get_settings()
 
     # ---- lifecycle ---------------------------------------------------------
     def shutdown(self) -> None:
-        self._finish_recording()
-        if self._hotkeys is not None:
+        try:
+            self._finish_recording()
+        finally:
             try:
-                self._hotkeys.stop()
-            except Exception:  # noqa: BLE001
-                log.exception("stopping hotkeys failed")
-            self._hotkeys = None
-        self._queue.shutdown()
+                self._stop_hotkeys()
+            finally:
+                self._queue.shutdown()
