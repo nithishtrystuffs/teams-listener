@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Teams Listener — one UI</title>
+<style>
+:root{
+  --desk:#dfe5ee; --win:#f9f9fb; --mica:linear-gradient(160deg,#eef2fb,#f6f4fb 60%,#f3f7f8);
+  --side:rgba(255,255,255,.55); --card:#ffffff; --line:#e4e6eb; --line2:#eef0f3;
+  --text:#16181d; --muted:#666d79; --faint:#9aa1ac;
+  --accent:#005fb8; --accent2:#3b82f6; --accent-soft:#e8f1fb;
+  --red:#d92d3a; --red-glow:rgba(217,45,58,.28); --green:#16a34a; --green-glow:rgba(22,163,74,.30);
+  --me:#6d5dfc; --others:#0ea5e9; --amber:#f5a524;
+  --shadow:0 24px 60px -18px rgba(20,30,60,.35),0 2px 6px rgba(20,30,60,.08);
+}
+.dark{
+  --desk:#07080b; --win:#121318; --mica:linear-gradient(160deg,#16182a,#121318 55%,#0f1a1f);
+  --side:rgba(255,255,255,.025); --card:#191b21; --line:#262932; --line2:#1d1f26;
+  --text:#ececf1; --muted:#99a0ac; --faint:#5f6672;
+  --accent:#60a5fa; --accent2:#60a5fa; --accent-soft:#16233a;
+  --red:#ff5d62; --red-glow:rgba(255,93,98,.35); --green:#3dd68c; --green-glow:rgba(61,214,140,.35);
+  --me:#8b84ff; --others:#38bdf8;
+  --shadow:0 30px 70px -20px rgba(0,0,0,.8),0 0 0 1px rgba(255,255,255,.04);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--desk);color:var(--text);font:13px/1.45 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;transition:background .25s;min-height:100vh}
+.wrap{max-width:1140px;margin:0 auto;padding:22px 20px 40px}
+.intro{display:flex;justify-content:space-between;gap:20px;align-items:flex-end;margin-bottom:14px}
+.intro h1{font-size:18px;margin:0 0 3px;font-weight:650}.intro p{margin:0;color:var(--muted);max-width:760px}
+.ctl{display:flex;gap:8px}
+.ctl button{border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:8px;padding:7px 12px;font:inherit;cursor:pointer}
+
+/* window */
+.window{position:relative;height:640px;border-radius:12px;overflow:hidden;background:var(--mica);box-shadow:var(--shadow);border:1px solid var(--line);display:flex;flex-direction:column;transition:opacity .25s,transform .25s}
+.window.hidden{opacity:0;transform:scale(.97);pointer-events:none}
+.titlebar{height:38px;display:flex;align-items:center;justify-content:space-between;padding-left:14px;font-size:12px;color:var(--muted);flex:none}
+.brand{display:flex;gap:9px;align-items:center;color:var(--text);font-weight:600}
+.logo{width:18px;height:18px;border-radius:6px;background:linear-gradient(135deg,var(--accent2),#22d3ee);position:relative}
+.logo:after{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff}
+.wc{display:flex}.wc span{width:46px;height:38px;display:grid;place-items:center;cursor:pointer}.wc span:hover{background:var(--line2)}
+.wc span.x:hover{background:#c42b1c;color:#fff}
+.body{flex:1;display:flex;min-height:0}
+
+/* sidebar */
+.side{width:268px;flex:none;background:var(--side);border-right:1px solid var(--line2);padding:6px 12px 12px;display:flex;flex-direction:column}
+.big{display:flex;align-items:center;justify-content:center;gap:8px;border:none;border-radius:9px;padding:10px;font:inherit;font-weight:600;color:#fff;cursor:pointer;background:var(--accent);margin-bottom:10px;transition:background .2s}
+.big.stop{background:var(--red)}
+.search{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:7px 10px;color:var(--faint);margin-bottom:8px}
+.search input{border:none;outline:none;background:transparent;color:var(--text);font:inherit;flex:1;min-width:0}
+.search kbd{font:11px inherit;border:1px solid var(--line);border-radius:4px;padding:0 5px}
+.group{font-size:11px;color:var(--faint);font-weight:600;margin:12px 8px 4px;letter-spacing:.02em}
+.item{padding:8px 10px;border-radius:8px;cursor:pointer;position:relative}
+.item:hover{background:var(--line2)}
+.item.active{background:var(--card);box-shadow:0 0 0 1px var(--line),0 1px 2px rgba(0,0,0,.04)}
+.item.active:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--accent)}
+.item .t{display:flex;align-items:center;gap:8px;font-weight:550}
+.item .s{color:var(--muted);font-size:12px;padding-left:16px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none}
+.pbar{height:3px;background:var(--line);border-radius:2px;margin:6px 0 0 16px;overflow:hidden}.pbar i{display:block;height:100%;background:var(--accent);transition:width .3s}
+.foot{margin-top:auto;display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:12px;padding:10px 6px 0;border-top:1px solid var(--line2)}
+.foot span{cursor:pointer}
+
+/* main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--win);border-top-left-radius:10px;border-top:1px solid var(--line2);border-left:1px solid var(--line2)}
+.view{display:none;flex:1;min-height:0;flex-direction:column}.view.on{display:flex}
+.head{padding:18px 28px 14px;border-bottom:1px solid var(--line2)}
+.head h2{margin:0;font-size:19px;font-weight:650;display:flex;align-items:center;gap:10px}
+.meta{display:flex;gap:8px;color:var(--muted);font-size:12px;margin-top:6px;flex-wrap:wrap;align-items:center}
+.chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px;color:var(--muted);background:var(--card)}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--card);border-radius:8px;padding:6px 11px;font:inherit;font-size:12px;color:var(--text);cursor:pointer}
+.btn:hover{border-color:var(--faint)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+
+/* idle */
+.idle{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:30px;text-align:center}
+.idle h3{margin:0;font-size:22px;font-weight:650}
+.idle .row{display:flex;gap:8px;width:min(440px,100%)}
+.idle .row .search{flex:1;margin:0}
+.hint{color:var(--muted);font-size:12px}
+kbd.k{border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;font:11px inherit;color:var(--text);background:var(--card)}
+.devices{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+
+/* recording */
+.rec{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:24px;padding:20px;position:relative}
+.rec:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 45%,var(--glow,transparent),transparent 45%);pointer-events:none;transition:background .3s}
+.timer{display:flex;align-items:center;gap:10px;font-size:30px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+.pulse{width:10px;height:10px;border-radius:50%;background:var(--red);animation:p 1.6s infinite}
+@keyframes p{0%{box-shadow:0 0 0 0 var(--red-glow)}70%{box-shadow:0 0 0 12px transparent}100%{box-shadow:0 0 0 0 transparent}}
+.mute{position:relative;width:164px;height:164px;border-radius:50%;border:none;cursor:pointer;color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:inherit;transition:transform .12s,background .25s,box-shadow .25s}
+.mute:active{transform:scale(.97)}
+.mute.off{background:radial-gradient(circle at 50% 35%,#ff6b74,var(--red) 70%);box-shadow:0 0 0 8px var(--red-glow),0 18px 40px -10px var(--red-glow)}
+.mute.on{background:radial-gradient(circle at 50% 35%,#4ade80,var(--green) 70%);box-shadow:0 0 0 8px var(--green-glow),0 0 0 22px color-mix(in srgb,var(--green) 10%,transparent),0 18px 40px -10px var(--green-glow)}
+.mute svg{width:42px;height:42px}
+.mute b{font-size:15px;letter-spacing:.1em}.mute small{font-size:11px;opacity:.85}
+.meters{display:grid;grid-template-columns:1fr 1fr;gap:14px;width:min(580px,100%);position:relative}
+.meter{border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:var(--card)}
+.meter .h{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:8px}.meter .h b{color:var(--text);font-weight:600}
+.bars{display:flex;align-items:flex-end;gap:3px;height:30px}
+.bars i{flex:1;border-radius:2px;background:var(--others);height:10%;transition:height .09s linear}
+.bars.me i{background:var(--me)}
+.tl{width:min(580px,100%);position:relative}
+.tl .track{position:relative;height:8px;background:var(--line2);border-radius:4px;overflow:hidden}
+.tl .track i{position:absolute;top:0;bottom:0;background:var(--me);border-radius:4px}
+.tl .cap{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin-top:5px}
+.recbar{display:flex;gap:8px;position:relative}
+
+/* transcript */
+.toolbar{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.tabs{display:flex;gap:20px;padding:0 28px;border-bottom:1px solid var(--line2)}
+.tabs span{padding:10px 0;color:var(--muted);cursor:pointer}.tabs span.on{color:var(--text);box-shadow:inset 0 -2px 0 var(--accent);font-weight:600}
+.tx{flex:1;overflow:auto;padding:14px 22px 24px}
+.line{display:grid;grid-template-columns:64px 28px 1fr;gap:10px;padding:10px 8px;border-radius:8px}
+.line:hover{background:var(--line2)}
+.line .ts{color:var(--faint);font-size:12px;font-variant-numeric:tabular-nums;padding-top:3px;cursor:pointer}
+.line .ts:hover{color:var(--accent)}
+.av{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:#fff}
+.av.o{background:var(--others)}.av.m{background:var(--me)}
+.who{font-size:12px;font-weight:650;margin-bottom:2px}.who.o{color:var(--others)}.who.m{color:var(--me)}
+.line p{margin:0;line-height:1.6}
+mark{background:color-mix(in srgb,var(--amber) 38%,transparent);color:inherit;border-radius:3px;padding:0 2px}
+.player{display:flex;align-items:center;gap:10px;margin:0 28px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:12px;color:var(--muted)}
+.player .seek{flex:1;height:4px;background:var(--line);border-radius:2px;position:relative}.player .seek i{position:absolute;left:0;top:0;bottom:0;width:22%;background:var(--accent);border-radius:2px}
+
+/* transcribing */
+.progress{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.ring{--v:0;width:120px;height:120px;border-radius:50%;background:conic-gradient(var(--accent) calc(var(--v)*1%),var(--line) 0);display:grid;place-items:center}
+.ring div{width:100px;height:100px;border-radius:50%;background:var(--win);display:grid;place-items:center;font-size:22px;font-weight:650;font-variant-numeric:tabular-nums}
+
+/* pill */
+.pill{position:fixed;top:22px;left:50%;transform:translate(-50%,-140%);display:flex;align-items:center;gap:10px;padding:6px 6px 6px 14px;border-radius:999px;background:rgba(18,19,24,.88);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.09);color:#ececf1;box-shadow:0 14px 34px rgba(0,0,0,.4);font-size:12px;transition:transform .3s cubic-bezier(.2,.9,.3,1.2);z-index:10;cursor:grab}
+.pill.show{transform:translate(-50%,0)}
+.pill .pulse{width:8px;height:8px}
+.pill .mini{display:flex;gap:2px;align-items:flex-end;height:16px;width:44px}.pill .mini i{flex:1;background:#38bdf8;border-radius:1px;height:20%;transition:height .09s}
+.pill .m{border-radius:999px;padding:5px 12px;font-weight:600;cursor:pointer;display:flex;gap:6px;align-items:center;transition:background .2s}
+.pill .m.off{background:#d92d3a;color:#fff}.pill .m.on{background:#16a34a;color:#fff}
+.pill .ic{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);cursor:pointer}
+.pill .ic:hover{background:rgba(255,255,255,.16)}
+.callbg{display:none;height:640px;border-radius:12px;background:linear-gradient(135deg,#1d2140,#2b2350 50%,#173246);position:relative;overflow:hidden}
+.callbg.show{display:block}
+.callbg .g{position:absolute;inset:60px 24px 24px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.callbg .g div{border-radius:10px;background:rgba(255,255,255,.06);display:grid;place-items:center;color:rgba(255,255,255,.35)}
+.callbg .lbl{position:absolute;bottom:10px;left:0;right:0;text-align:center;color:rgba(255,255,255,.5);font-size:12px}
+.legend{margin-top:14px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.legend div{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--muted)}
+.legend b{display:block;color:var(--text);margin-bottom:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="intro">
+    <div>
+      <h1>Teams Listener — the one combined UI (clickable prototype)</h1>
+      <p>Try it: <b>Start</b> → click the big button to go live → <b>⤓ Minimise to pill</b> → <b>Stop</b> → watch it transcribe → read the transcript. Search box and tabs work too.</p>
+    </div>
+    <div class="ctl"><button onclick="document.body.classList.toggle('dark')">◐ Light / Dark</button><button onclick="reset()">↺ Reset</button></div>
+  </div>
+
+  <div class="callbg" id="callbg"><div class="g"><div>Participant</div><div>Participant</div><div>Participant</div><div>Participant</div><div>Shared screen</div><div>You</div></div><div class="lbl">Your Teams call — the app is minimised to the pill above. Drag it anywhere. ⤢ brings the window back.</div></div>
+
+  <div class="pill" id="pill">
+    <span class="pulse"></span><span class="ptime" style="font-variant-numeric:tabular-nums">00:00</span>
+    <span class="mini" id="pmini"></span>
+    <span class="m off" id="pmute" onclick="toggleMute()">🎤 <span>Muted</span></span>
+    <span class="ic" title="Open window" onclick="restore()">⤢</span>
+    <span class="ic" title="Stop recording" style="color:#ff7a7e" onclick="stopRec()">■</span>
+  </div>
+
+  <div class="window" id="win">
+    <div class="titlebar"><div class="brand"><div class="logo"></div>Teams Listener</div><div class="wc"><span onclick="minimise()" title="Minimise">—</span><span>▢</span><span class="x">✕</span></div></div>
+    <div class="body">
+      <aside class="side">
+        <button class="big" id="bigbtn" onclick="bigClick()">● New recording</button>
+        <label class="search">⌕ <input id="q" placeholder="Search all transcripts" oninput="search(this.value)"><kbd>Ctrl K</kbd></label>
+        <div id="list"></div>
+        <div class="foot"><span>⚙ Settings</span><span>small.en · 🔒 offline</span></div>
+      </aside>
+
+      <section class="main">
+        <!-- IDLE -->
+        <div class="view on" id="v-idle">
+          <div class="idle">
+            <h3>Ready when your call starts</h3>
+            <div class="row"><label class="search"><input id="title" placeholder="Meeting title (optional)"></label><button class="btn primary" onclick="startRec()">● Start</button></div>
+            <div class="devices"><span class="chip">🎧 realme Buds Air7</span><span class="chip">🎤 Headset (realme Buds Air7)</span></div>
+            <div class="hint">Everything you hear is recorded. Your mic starts <b>muted</b> — press <kbd class="k">Ctrl</kbd> <kbd class="k">Alt</kbd> <kbd class="k">M</kbd> when you speak.</div>
+          </div>
+        </div>
+
+        <!-- RECORDING -->
+        <div class="view" id="v-rec">
+          <div class="head">
+            <h2 id="rtitle">Weekly standup</h2>
+            <div class="meta"><span class="chip">🎧 realme Buds Air7</span><span class="chip">🎤 Headset (realme Buds Air7)</span><span class="chip">🔒 Stays on this PC</span></div>
+          </div>
+          <div class="rec" id="recpane">
+            <div class="timer"><span class="pulse"></span><span class="rtime">00:00:00</span></div>
+            <button class="mute off" id="mute" onclick="toggleMute()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path id="slash" d="M4 4l16 16"/></svg>
+              <b id="mlabel">MUTED</b><small>Click or Ctrl+Alt+M</small>
+            </button>
+            <div class="meters">
+              <div class="meter"><div class="h"><b>Others</b><span>always recorded</span></div><div class="bars" id="bo"></div></div>
+              <div class="meter"><div class="h"><b>Me</b><span id="mestate">muted</span></div><div class="bars me" id="bm"></div></div>
+            </div>
+            <div class="tl"><div class="track" id="track"></div><div class="cap"><span>0:00</span><span>When you were live</span><span class="rtime2">0:00</span></div></div>
+            <div class="recbar"><button class="btn" onclick="minimise()">⤓ Minimise to pill</button><button class="btn" style="color:var(--red)" onclick="stopRec()">■ Stop &amp; transcribe</button></div>
+          </div>
+        </div>
+
+        <!-- TRANSCRIBING -->
+        <div class="view" id="v-prog">
+          <div class="head"><h2 id="ptitle">Weekly standup</h2><div class="meta"><span>Today</span><span>· transcribing on this PC</span></div></div>
+          <div class="progress">
+            <div class="ring" id="ring"><div id="pct">0%</div></div>
+            <div style="font-weight:600">Transcribing…</div>
+            <div class="hint" id="eta">About 4 min left · you can keep working, it runs quietly</div>
+          </div>
+        </div>
+
+        <!-- TRANSCRIPT -->
+        <div class="view" id="v-tx">
+          <div class="head">
+            <h2 id="ttitle">Design review <span class="chip" style="color:var(--green)">✓ Transcribed</span></h2>
+            <div class="meta"><span>Tue 25 Nov · 10:00</span><span>· 47 min</span><span>· Others &amp; Me</span></div>
+            <div class="toolbar"><button class="btn">⧉ Copy all</button><button class="btn">⤓ Export .md</button><button class="btn">📁 Open folder</button><button class="btn">↻ Transcribe again</button></div>
+          </div>
+          <div style="padding-top:12px"><div class="player">▶ <span>00:10:24</span><div class="seek"><i></i></div><span>00:47:02</span> <span title="Click any timestamp to jump there">ⓘ</span></div></div>
+          <div class="tabs" style="margin-top:8px"><span class="on" onclick="tab(this,'all')">Transcript</span><span onclick="tab(this,'me')">Only my lines</span><span onclick="tab(this,'details')">Details</span></div>
+          <div class="tx" id="tx"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div><b>From A · Windows 11</b>Mica background, Segoe UI, follows Windows light/dark, native title bar.</div>
+    <div><b>From B · Dark studio</b>Huge glowing mute button, live bar meters, red/green glow you can't miss.</div>
+    <div><b>From C · Floating pill</b>One click shrinks to an always-on-top pill over Teams with mute + stop.</div>
+    <div><b>New</b>Meetings sidebar, search across transcripts, in-app reader, audio playback, "only my lines".</div>
+  </div>
+</div>
+
+<script>
+const meetings=[
+  {id:'sp',title:'Sprint planning',group:'Today',sub:'10:30 · 38 min',state:'done'},
+  {id:'dr',title:'Design review',group:'Yesterday',sub:'10:00 · 47 min',state:'done'},
+  {id:'11',title:'1:1 with manager',group:'Yesterday',sub:'16:30 · 22 min',state:'done'},
+  {id:'vc',title:'Vendor call',group:'Last week',sub:'Not transcribed',state:'none'},
+];
+const lines=[
+  ['00:00:12','o','Morning everyone. Let\'s start with the dashboard redesign, then talk about the deploy schedule for Friday.'],
+  ['00:00:31','o','The new charts are in staging. Load time went from four seconds to just under one.'],
+  ['00:01:05','m','Nice. I tested it on the slow VPN yesterday and it held up. One thing — the export button is hidden on small screens.'],
+  ['00:01:22','o','Good catch, I\'ll move it into the toolbar. Can you own the deploy checklist?'],
+  ['00:01:30','m','Yes, I\'ll have it ready by Thursday so we can deploy Friday morning.'],
+  ['00:02:04','o','Perfect. Last thing — the customer asked for CSV export as well as PDF.'],
+  ['00:02:19','m','That\'s a small change, I can add it to the same release.'],
+];
+let state='idle',muted=true,sec=0,timer=null,active='dr',curTab='all',query='',liveStart=null,segs=[];
+const $=id=>document.getElementById(id);
+function bars(el,n){el.innerHTML='<i></i>'.repeat(n)}
+bars($('bo'),22);bars($('bm'),22);bars($('pmini'),6);
+
+function renderList(){
+  let html='',g='';
+  if(state==='rec'||state==='prog'){
+    html+='<div class="group">Now</div>'+
+      `<div class="item ${state==='rec'||active==='new'?'active':''}" onclick="${state==='rec'?'show(\'rec\')':'show(\'prog\')'}"><div class="t"><span class="dot" style="background:${state==='rec'?'var(--red)':'var(--accent)'}"></span>${curTitle()}</div><div class="s">${state==='rec'?'Recording · '+fmt(sec,true):'Transcribing '+Math.round(prog)+'%'}</div>${state==='prog'?`<div class="pbar"><i style="width:${prog}%"></i></div>`:''}</div>`;
+  }
+  for(const m of meetings){
+    const hit=!query||m.title.toLowerCase().includes(query)||(m.id==='dr'&&lines.some(l=>l[2].toLowerCase().includes(query)));
+    if(!hit)continue;
+    if(m.group!==g){g=m.group;html+=`<div class="group">${g}</div>`}
+    const c=m.state==='done'?'var(--green)':'var(--faint)';
+    const extra=query&&m.id==='dr'?` · ${lines.filter(l=>l[2].toLowerCase().includes(query)).length} matches`:'';
+    html+=`<div class="item ${active===m.id&&state!=='rec'?'active':''}" onclick="open_('${m.id}')"><div class="t"><span class="dot" style="background:${c}"></span>${m.title}</div><div class="s">${m.sub}${extra}</div></div>`;
+  }
+  $('list').innerHTML=html;
+}
+function curTitle(){return $('title').value.trim()||'Weekly standup'}
+function show(v){['idle','rec','prog','tx'].forEach(x=>$('v-'+x).classList.toggle('on',x===v))}
+function open_(id){if(state==='rec')return;active=id;show('tx');$('ttitle').firstChild.textContent=meetings.find(m=>m.id===id).title+' ';renderTx();renderList()}
+function renderTx(){
+  const esc=s=>s.replace(/[&<]/g,c=>({'&':'&amp;','<':'&lt;'}[c]));
+  if(curTab==='details'){$('tx').innerHTML=`<div style="padding:10px 8px;color:var(--muted);line-height:2">Recorded from <b style="color:var(--text)">realme Buds Air7</b> and <b style="color:var(--text)">Headset mic</b><br>You were live for 6 min 12 s across 9 moments<br>Model: small.en · transcribed in 17 min · audio kept (74 MB)<br>Folder: Documents\\TeamsTranscripts\\2026-11-25_1000_Design-review</div>`;return}
+  $('tx').innerHTML=lines.filter(l=>curTab==='all'||l[1]==='m').map(([t,w,s])=>{
+    let txt=esc(s);if(query)txt=txt.replace(new RegExp('('+query.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<mark>$1</mark>');
+    return `<div class="line"><span class="ts" title="Play from here">${t}</span><span class="av ${w}">${w==='o'?'O':'M'}</span><div><div class="who ${w}">${w==='o'?'Others':'Me'}</div><p>${txt}</p></div></div>`}).join('');
+}
+function tab(el,t){document.querySelectorAll('.tabs span').forEach(s=>s.classList.remove('on'));el.classList.add('on');curTab=t;renderTx()}
+function search(v){query=v.trim().toLowerCase();renderList();if(state!=='rec'&&$('v-tx').classList.contains('on'))renderTx()}
+
+function fmt(s,short){const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=s%60,p=n=>String(n).padStart(2,'0');return short?`${p(m+h*60)}:${p(x)}`:`${p(h)}:${p(m)}:${p(x)}`}
+function bigClick(){state==='rec'?stopRec():(show('idle'),active=null,renderList())}
+function startRec(){
+  state='rec';sec=0;segs=[];muted=true;applyMute();
+  $('rtitle').textContent=curTitle();$('bigbtn').textContent='■ Stop recording';$('bigbtn').classList.add('stop');
+  show('rec');renderList();timer=setInterval(tick,1000);
+}
+function tick(){sec++;document.querySelectorAll('.rtime').forEach(e=>e.textContent=fmt(sec));document.querySelector('.ptime').textContent=fmt(sec,true);$('v-rec').querySelector('.rtime2').textContent=fmt(sec,true);drawTrack();renderList()}
+function drawTrack(){const total=Math.max(sec,1);let h='';for(const [a,b] of segs.concat(liveStart!==null?[[liveStart,sec]]:[]))h+=`<i style="left:${a/total*100}%;width:${Math.max((b-a)/total*100,.8)}%"></i>`;$('track').innerHTML=h}
+function toggleMute(){if(state!=='rec')return;muted=!muted;if(!muted)liveStart=sec;else if(liveStart!==null){segs.push([liveStart,sec]);liveStart=null}applyMute();drawTrack()}
+function applyMute(){
+  const b=$('mute');b.classList.toggle('on',!muted);b.classList.toggle('off',muted);$('mlabel').textContent=muted?'MUTED':'LIVE';$('slash').style.display=muted?'':'none';
+  $('mestate').textContent=muted?'muted':'live';
+  const p=$('pmute');p.classList.toggle('on',!muted);p.classList.toggle('off',muted);p.querySelector('span').textContent=muted?'Muted':'Live';
+  $('recpane').style.setProperty('--glow',muted?'transparent':'color-mix(in srgb,var(--green) 9%,transparent)');
+}
+function minimise(){if(state!=='rec')return;$('win').classList.add('hidden');$('win').style.display='none';$('callbg').classList.add('show');$('pill').classList.add('show')}
+function restore(){const p=$('pill');p.style.left=p.style.top=p.style.transform=p.style.transition='';p.classList.remove('show');$('callbg').classList.remove('show');$('win').style.display='';requestAnimationFrame(()=>$('win').classList.remove('hidden'))}
+let prog=0,pt=null;
+function stopRec(){
+  if(state!=='rec')return;restore();clearInterval(timer);if(liveStart!==null){segs.push([liveStart,sec]);liveStart=null}
+  state='prog';prog=0;active='new';$('bigbtn').textContent='● New recording';$('bigbtn').classList.remove('stop');$('ptitle').textContent=curTitle();show('prog');renderList();
+  pt=setInterval(()=>{prog=Math.min(100,prog+2.5);$('ring').style.setProperty('--v',prog);$('pct').textContent=Math.round(prog)+'%';$('eta').textContent=prog<100?`About ${Math.max(1,Math.round((100-prog)/25))} min left · you can keep working, it runs quietly`:'Done';renderList();
+    if(prog>=100){clearInterval(pt);meetings.unshift({id:'dr2',title:curTitle(),group:'Today',sub:'just now · '+Math.max(1,Math.round(sec/60))+' min',state:'done'});state='idle';active='dr2';show('tx');$('ttitle').firstChild.textContent=curTitle()+' ';renderTx();renderList()}},120);
+}
+function reset(){clearInterval(timer);clearInterval(pt);restore();state='idle';active='dr';meetings.splice(0,meetings.length-4);$('bigbtn').textContent='● New recording';$('bigbtn').classList.remove('stop');show('tx');renderTx();renderList()}
+
+// animated meters
+setInterval(()=>{
+  const t=Date.now()/1000;
+  const set=(el,amp)=>[...el.children].forEach((b,i)=>b.style.height=Math.max(6,amp*(30+50*Math.abs(Math.sin(t*3+i*.7))*Math.random()+20*Math.random()))+'%');
+  set($('bo'),state==='rec'?1:0);set($('bm'),state==='rec'&&!muted?1:0);set($('pmini'),1);
+},110);
+// drag pill
+(()=>{const p=$('pill');let d=null;p.addEventListener('mousedown',e=>{if(e.target.closest('.m,.ic'))return;d=[e.clientX-p.offsetLeft,e.clientY-p.offsetTop];p.style.transition='none'});
+addEventListener('mousemove',e=>{if(!d)return;p.style.left=(e.clientX-d[0])+'px';p.style.top=(e.clientY-d[1])+'px';p.style.transform='none'});addEventListener('mouseup',()=>{d=null})})();
+addEventListener('keydown',e=>{if(e.ctrlKey&&e.altKey&&e.key.toLowerCase()==='m'){e.preventDefault();toggleMute()}if(e.ctrlKey&&e.key.toLowerCase()==='k'){e.preventDefault();$('q').focus()}});
+show('tx');renderTx();renderList();
+</script>
+</body>
+</html>
