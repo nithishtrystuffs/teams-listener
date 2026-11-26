@@ -16,8 +16,8 @@ Build the installer once (see Development), then run **`desktop\dist\Teams Liste
 It installs per user (no admin rights) to `%LOCALAPPDATA%\Programs\teams-listener`, adds a desktop shortcut and
 starts the app. The installer isn't code-signed, so Windows SmartScreen may warn: click **More info → Run anyway**.
 
-The app opens a window and a tray icon. Pressing **● New recording** also shows a small always-on-top pill with the
-mute button.
+The app opens a window and a tray icon. While a recording runs, minimising or hiding the window shows a small
+always-on-top pill with the timer, the mute button and Stop.
 
 **First transcription** downloads the speech model from Hugging Face once (small.en ≈ 480 MB, medium.en ≈ 1.5 GB).
 If your office network blocks that, download the model folder (e.g. `Systran/faster-whisper-small.en`) on
@@ -25,7 +25,8 @@ another network and choose it under **Settings → Model folder**.
 
 ## Using it
 
-1. Optionally type a meeting title, then press **● New recording** when the meeting begins.
+1. Press **● New recording** to open the title screen, optionally type a meeting title, then press **● Start**
+   when the meeting begins.
 2. The big mic button starts **MUTED**. Press it, or the shortcut **Ctrl+Alt+M**, to go **LIVE**
    when you speak, then press again to mute. The shortcut works while Teams has focus.
    The tray icon is grey when idle, red when recording and muted, and green when recording and live.
