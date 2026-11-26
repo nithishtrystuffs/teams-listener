@@ -4,6 +4,7 @@
 (() => {
   const {
     groupMeetings, fmtClock, fmtEta, escapeHtml, statusDot, timelineSegments, prettyHotkey,
+    decideAfterRecordingEnded, transcribingResolved,
   } = window.TL;
   const api = window.api;
   const $ = (id) => document.getElementById(id);
@@ -27,6 +28,8 @@
     clockBase: 0, // performance.now() at elapsed 0 of the current recording
     levels: { others: 0, me: 0 },
     busy: false,
+    stopRequested: false, // this UI called stop() and is waiting for the engine to confirm
+    endedFolder: null, // recording that ended without our stop(); may still turn out to be queued
   };
 
   // ---- engine access --------------------------------------------------------
@@ -37,9 +40,7 @@
   // Resolves to the result, or null after showing a toast when the call fails.
   async function call(cmd, args) {
     try {
-      const r = await api.call(cmd, args);
-      hideBanner();
-      return r;
+      return await api.call(cmd, args);
     } catch (err) {
       toast(errText(err), true);
       return null;
@@ -64,8 +65,9 @@
     setTimeout(() => el.remove(), 5000);
   }
 
+  // The engine banner stays until the user dismisses it or a user-initiated action succeeds.
   function showBanner(text) {
-    $('banner').textContent = text;
+    $('banner-text').textContent = text;
     $('banner').hidden = false;
   }
 
@@ -120,7 +122,6 @@
     const prev = store.status;
     const wasRec = !!(prev && prev.recording);
     store.status = st;
-    hideBanner();
     if (st.recording) {
       store.lastDevices = { mic: st.mic, outputs: st.outputs || [] };
       store.clockBase = performance.now() - (st.elapsed_s || 0) * 1000;
@@ -143,7 +144,11 @@
         store.liveMoments.push([store.liveStart, prev.elapsed_s]);
         store.liveStart = null;
       }
-      if (store.view === 'rec' || store.activeFolder === prev.folder) showTranscribing(prev.folder);
+      const next = decideAfterRecordingEnded(prev, st, store.stopRequested);
+      if (next && (store.view === 'rec' || store.activeFolder === next.folder)) {
+        if (next.view === 'prog') showTranscribing(next.folder);
+        else showEnded(next.folder);
+      }
     }
     render();
   }
@@ -153,7 +158,21 @@
     store.activeFolder = folder;
     store.meeting = null;
     store.view = 'prog';
+    store.endedFolder = folder; // if a stale list ever bounces us to tx, a queued status brings us back
     loadMeeting(folder);
+    refreshMeetings(); // a fresh list supersedes any in-flight (stale) one
+  }
+
+  // The recording ended without this UI's stop() (engine crash/restart, or a stop from the pill or
+  // tray). Show its transcript view; refreshMeetings() moves it to Transcribing if the engine queued it.
+  function showEnded(folder) {
+    store.activeFolder = folder;
+    store.endedFolder = folder;
+    store.meeting = null;
+    store.view = 'tx';
+    store.tab = 'all';
+    loadMeeting(folder);
+    refreshMeetings();
   }
 
   let loadSeq = 0;
@@ -175,6 +194,20 @@
     for (const f of Object.keys(store.progressByFolder)) {
       const it = list.find((m) => m.folder === f);
       if (!it || it.status === 'transcribed' || it.status === 'not transcribed') delete store.progressByFolder[f];
+    }
+    const item = list.find((m) => m.folder === store.activeFolder);
+    if (store.view === 'prog' && transcribingResolved(item, store.progressByFolder[store.activeFolder])) {
+      store.view = 'tx';
+      render();
+      loadMeeting(store.activeFolder);
+      return;
+    }
+    if (store.view === 'tx' && item && item.folder === store.endedFolder
+      && (item.status === 'queued' || item.status === 'transcribing')) {
+      store.endedFolder = null;
+      store.view = 'prog';
+      render();
+      return;
     }
     renderSidebar();
     if (store.view === 'prog') renderProg();
@@ -201,7 +234,10 @@
     renderSidebar();
     try {
       const st = await call('start', { title: $('title').value.trim() });
-      if (st) applyStatus(st);
+      if (st) {
+        hideBanner();
+        applyStatus(st);
+      }
     } finally {
       store.busy = false;
       renderSidebar();
@@ -212,12 +248,15 @@
     if (store.busy || !isRecording()) return;
     store.busy = true;
     renderSidebar();
+    store.stopRequested = true;
     try {
       const r = await call('stop');
-      if (r && r.folder && store.activeFolder !== r.folder) showTranscribing(r.folder);
+      if (r) hideBanner();
+      if (r && r.folder && (store.activeFolder !== r.folder || store.view !== 'prog')) showTranscribing(r.folder);
       const st = await call('status');
       if (st) applyStatus(st);
     } finally {
+      store.stopRequested = false;
       store.busy = false;
       render();
     }
@@ -226,13 +265,17 @@
   async function toggleMute() {
     if (!isRecording() || store.status.nomic) return;
     const st = await call('toggle_mute');
-    if (st) applyStatus(st);
+    if (st) {
+      hideBanner();
+      applyStatus(st);
+    }
   }
 
   function openMeeting(folder) {
     const item = store.meetings.find((m) => m.folder === folder);
     if (!item) return;
     store.activeFolder = folder;
+    store.endedFolder = null;
     if (item.status === 'recording') {
       store.view = 'rec';
       render();
@@ -258,8 +301,11 @@
     if (!folder) return;
     const r = await call('transcribe_again', { folder });
     if (r) {
+      hideBanner();
+      store.endedFolder = null;
       store.view = 'prog';
       render();
+      refreshMeetings();
     }
   }
 
@@ -310,7 +356,8 @@
     else if (item.duration_s != null) parts.push(fmtMinutes(item.duration_s));
     let s = escapeHtml(parts.join(' · '));
     const hits = store.search.counts.get(item.folder);
-    if (store.search.query && hits) s += ` · <span class="hits">${hits} match${hits === 1 ? '' : 'es'}</span>`;
+    const n = Number(hits) || 0;
+    if (store.search.query && n) s += ` · <span class="hits">${n} match${n === 1 ? '' : 'es'}</span>`;
     return s;
   }
 
@@ -472,7 +519,9 @@
   }
 
   function wire() {
-    $('bigbtn').addEventListener('click', () => (isRecording() ? stopRecording() : startRecording()));
+    // Not recording: show Idle with the title box focused (its Start / Enter starts). Recording: stop.
+    $('bigbtn').addEventListener('click', () => (isRecording() ? stopRecording() : goIdle()));
+    $('banner-x').addEventListener('click', hideBanner);
     $('start-form').addEventListener('submit', (e) => {
       e.preventDefault();
       startRecording();
@@ -584,6 +633,7 @@
       const newest = store.meetings.find((m) => m.status === 'transcribed');
       if (newest) await openMeeting(newest.folder);
     }
+    if (params.get('smokeIdle')) $('bigbtn').click(); // reach Idle the way a user would
     requestAnimationFrame(() => api.ui('smokeReady').catch(() => {}));
   }
 

@@ -129,18 +129,25 @@ window.TLViews.transcript = (ctx) => {
     return d || (store.meeting && store.meeting.duration_s) || 0;
   }
 
+  // The two tracks can differ slightly in length; the player follows whichever is further along.
+  const pos = () => Math.max(ao.currentTime || 0, am.currentTime || 0);
+  const isPaused = () => ao.paused && am.paused;
+
   function updatePlayer() {
     const dur = audioDuration();
-    $('pos').textContent = fmtClock(ao.currentTime);
+    $('pos').textContent = fmtClock(pos());
     $('dur').textContent = fmtClock(dur);
-    $('seek-fill').style.width = dur ? Math.min(100, (ao.currentTime / dur) * 100) + '%' : '0';
-    $('play-btn').textContent = ao.paused ? '▶' : '❚❚';
-    $('play-btn').title = ao.paused ? 'Play' : 'Pause';
+    $('seek-fill').style.width = dur ? Math.min(100, (pos() / dur) * 100) + '%' : '0';
+    $('play-btn').textContent = isPaused() ? '▶' : '❚❚';
+    $('play-btn').title = isPaused() ? 'Play' : 'Pause';
   }
 
   function playAudio() {
-    am.currentTime = ao.currentTime;
-    Promise.all([ao.play(), am.play()]).catch((err) => toast('Couldn\'t play the audio: ' + errText(err), true));
+    if (ao.ended && am.ended) seekTo(0);
+    const t = pos();
+    const tracks = [ao, am].filter((a) => !Number.isFinite(a.duration) || t < a.duration);
+    for (const a of tracks) a.currentTime = t;
+    Promise.all(tracks.map((a) => a.play())).catch((err) => toast("Couldn't play the audio: " + errText(err), true));
   }
 
   function pauseAudio() {
@@ -155,14 +162,25 @@ window.TLViews.transcript = (ctx) => {
     updatePlayer();
   }
 
-  ao.addEventListener('timeupdate', () => {
-    if (!ao.paused && !am.paused && Math.abs(am.currentTime - ao.currentTime) > 0.25) am.currentTime = ao.currentTime;
-    updatePlayer();
-  });
-  for (const ev of ['play', 'pause', 'loadedmetadata', 'durationchange']) ao.addEventListener(ev, updatePlayer);
-  ao.addEventListener('pause', () => { if (!am.paused) am.pause(); });
-  ao.addEventListener('ended', () => am.pause());
-  ao.addEventListener('error', () => { if (playerFolder) toast('Couldn\'t load the meeting audio', true); });
+  let audioErrorShown = null;
+  for (const [a, other, name] of [[ao, am, 'Others'], [am, ao, 'Me']]) {
+    a.addEventListener('timeupdate', () => {
+      if (a === ao && !ao.paused && !am.paused && Math.abs(am.currentTime - ao.currentTime) > 0.25) {
+        am.currentTime = ao.currentTime;
+      }
+      updatePlayer();
+    });
+    for (const ev of ['play', 'pause', 'loadedmetadata', 'durationchange']) a.addEventListener(ev, updatePlayer);
+    // A user pause on either track pauses both; a track that simply ran out lets the other finish.
+    a.addEventListener('pause', () => { if (!a.ended && !other.paused) other.pause(); });
+    a.addEventListener('ended', updatePlayer);
+    a.addEventListener('error', () => {
+      if (!playerFolder || audioErrorShown === playerFolder) return;
+      audioErrorShown = playerFolder;
+      const code = a.error ? ` (code ${a.error.code})` : '';
+      toast(`Couldn't load the ${name} audio track${code}`, true);
+    });
+  }
 
   function seekFromPointer(e) {
     const r = $('seek').getBoundingClientRect();
@@ -171,46 +189,46 @@ window.TLViews.transcript = (ctx) => {
   }
 
   function wire() {
-  $('tabs').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-tab]');
-    if (!b) return;
-    store.tab = b.dataset.tab;
-    renderTx();
-  });
-  $('tx').addEventListener('click', (e) => {
-    const ts = e.target.closest('.ts');
-    if (ts && !ts.disabled) {
-      seekTo(Number(ts.dataset.t) || 0);
-      playAudio();
-      return;
-    }
-    if (e.target.closest('[data-action="transcribe"]')) transcribeAgain();
-  });
-
-  $('copy-btn').addEventListener('click', async () => {
-    if (!store.meeting) return;
-    const r = await window.api.ui('copyText', { text: transcriptText(store.meeting) }).then(() => true, (err) => {
-      toast(errText(err), true);
-      return false;
+    $('tabs').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-tab]');
+      if (!b) return;
+      store.tab = b.dataset.tab;
+      renderTx();
     });
-    if (r) toast('Transcript copied');
-  });
-  $('export-btn').addEventListener('click', async () => {
-    if (!store.meeting) return;
-    const p = await ui('exportMarkdown', { folder: store.meeting.folder });
-    if (p) toast('Saved to ' + p);
-  });
-  $('folder-btn').addEventListener('click', () => store.meeting && ui('openFolder', { path: store.meeting.folder }));
-  $('again-btn').addEventListener('click', transcribeAgain);
+    $('tx').addEventListener('click', (e) => {
+      const ts = e.target.closest('.ts');
+      if (ts && !ts.disabled) {
+        seekTo(Number(ts.dataset.t) || 0);
+        playAudio();
+        return;
+      }
+      if (e.target.closest('[data-action="transcribe"]')) transcribeAgain();
+    });
 
-  $('play-btn').addEventListener('click', () => (ao.paused ? playAudio() : pauseAudio()));
-  $('seek').addEventListener('pointerdown', (e) => {
-    $('seek').setPointerCapture(e.pointerId);
-    seekFromPointer(e);
-  });
-  $('seek').addEventListener('pointermove', (e) => {
-    if ($('seek').hasPointerCapture(e.pointerId)) seekFromPointer(e);
-  });
+    $('copy-btn').addEventListener('click', async () => {
+      if (!store.meeting) return;
+      const r = await window.api.ui('copyText', { text: transcriptText(store.meeting) }).then(() => true, (err) => {
+        toast(errText(err), true);
+        return false;
+      });
+      if (r) toast('Transcript copied');
+    });
+    $('export-btn').addEventListener('click', async () => {
+      if (!store.meeting) return;
+      const p = await ui('exportMarkdown', { folder: store.meeting.folder });
+      if (p) toast('Saved to ' + p);
+    });
+    $('folder-btn').addEventListener('click', () => store.meeting && ui('openFolder', { path: store.meeting.folder }));
+    $('again-btn').addEventListener('click', transcribeAgain);
+
+    $('play-btn').addEventListener('click', () => (ao.paused ? playAudio() : pauseAudio()));
+    $('seek').addEventListener('pointerdown', (e) => {
+      $('seek').setPointerCapture(e.pointerId);
+      seekFromPointer(e);
+    });
+    $('seek').addEventListener('pointermove', (e) => {
+      if ($('seek').hasPointerCapture(e.pointerId)) seekFromPointer(e);
+    });
   }
 
   wire();

@@ -77,6 +77,7 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
   const query = {};
   if (process.env.TL_SMOKE_OPEN) query.smokeOpen = '1';
+  if (process.env.TL_SMOKE_IDLE) query.smokeIdle = '1';
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query });
 }
 

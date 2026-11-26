@@ -74,7 +74,10 @@ button{font:inherit;color:inherit}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .btn.danger{color:var(--red)}
 .banner{margin:12px 28px 0;padding:9px 14px;border-radius:8px;border:1px solid color-mix(in srgb,var(--amber) 55%,transparent);background:color-mix(in srgb,var(--amber) 14%,var(--card));font-size:12px}
-.banner[hidden]{display:none}
+.banner{display:flex;align-items:center;gap:10px}
+.banner span{flex:1}
+.banner-x{border:none;background:none;cursor:pointer;color:var(--muted);padding:2px 6px;border-radius:4px}
+.banner-x:hover{background:var(--line2);color:var(--text)}
 
 /* idle */
 .idle{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:30px;text-align:center}

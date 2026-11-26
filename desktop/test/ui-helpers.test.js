@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const {
   groupMeetings, fmtClock, fmtEta, highlight, statusDot, timelineSegments, prettyHotkey, audioUrl,
+  decideAfterRecordingEnded, transcribingResolved,
 } = require('../renderer/lib/ui-helpers');
 
 const now = new Date(2026, 10, 26, 15, 0, 0); // local time, Thu 26 Nov 2026
@@ -87,4 +88,42 @@ test('prettyHotkey', () => {
 test('audioUrl uses the folder basename', () => {
   assert.strictEqual(audioUrl('C:\\x\\TeamsTranscripts\\2026-11-25_1826_A B', 'others'),
     'app-audio://meeting/2026-11-25_1826_A%20B/others.flac');
+});
+
+test('timelineSegments keeps left + width within 100', () => {
+  for (const seg of [[999, 1000], [1000, 1000], [995, 1000]]) {
+    const [s] = timelineSegments([seg], 1000);
+    assert.ok(s.leftPct + s.widthPct <= 100 + 1e-9, JSON.stringify(s));
+    assert.ok(s.widthPct >= 0.8 - 1e-9, JSON.stringify(s));
+  }
+  assert.deepStrictEqual(timelineSegments([[1000, 1000]], 1000), [{ leftPct: 99.2, widthPct: 0.8 }]);
+});
+
+const recA = { recording: true, muted: true, folder: 'A', elapsed_s: 5 };
+const idle = { recording: false, muted: true, folder: null, elapsed_s: 0 };
+
+test('decideAfterRecordingEnded: no transition means no decision', () => {
+  assert.strictEqual(decideAfterRecordingEnded(null, idle, false), null);
+  assert.strictEqual(decideAfterRecordingEnded(idle, idle, false), null);
+  assert.strictEqual(decideAfterRecordingEnded(recA, { ...recA, muted: false }, false), null);
+  assert.strictEqual(decideAfterRecordingEnded(idle, recA, false), null);
+});
+
+test('decideAfterRecordingEnded: a stop this UI asked for goes to Transcribing', () => {
+  assert.deepStrictEqual(decideAfterRecordingEnded(recA, idle, true), { folder: 'A', view: 'prog' });
+});
+
+test('decideAfterRecordingEnded: an unexpected end (engine crash) goes to the Transcript view', () => {
+  assert.deepStrictEqual(decideAfterRecordingEnded(recA, idle, false), { folder: 'A', view: 'tx' });
+});
+
+test('transcribingResolved: leave Transcribing only when the engine has nothing queued for it', () => {
+  const it = (status) => ({ folder: 'A', status });
+  assert.strictEqual(transcribingResolved(it('transcribed'), null), true);
+  assert.strictEqual(transcribingResolved(it('not transcribed'), null), true);
+  assert.strictEqual(transcribingResolved(it('not transcribed'), { frac: 0.2 }), false);
+  assert.strictEqual(transcribingResolved(it('queued'), null), false);
+  assert.strictEqual(transcribingResolved(it('transcribing'), null), false);
+  assert.strictEqual(transcribingResolved(it('recording'), null), false);
+  assert.strictEqual(transcribingResolved(null, null), false);
 });

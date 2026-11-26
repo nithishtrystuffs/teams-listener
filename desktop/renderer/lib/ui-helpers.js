@@ -76,14 +76,31 @@
     }
   }
 
+  const MIN_SEG = 0.8;
   function timelineSegments(moments, total) {
     const t = Math.max(Number(total) || 0, 0);
     return (moments || []).map(([a, b]) => {
       if (t <= 0) return { leftPct: 0, widthPct: 100 };
-      const leftPct = Math.min(100, Math.max(0, (a / t) * 100));
-      const widthPct = Math.max(((Math.max(b, a) - a) / t) * 100, 0.8);
-      return { leftPct, widthPct: Math.min(widthPct, 100 - leftPct || 0.8) };
+      const widthPct = Math.min(100, Math.max(((Math.max(b, a) - a) / t) * 100, MIN_SEG));
+      // Keep the segment inside the track: left + width <= 100.
+      const leftPct = Math.min(Math.max(0, (a / t) * 100), 100 - widthPct);
+      return { leftPct: Math.round(leftPct * 1e6) / 1e6, widthPct };
     });
+  }
+
+  // What to show when a recording ends. A stop this UI asked for goes to Transcribing; an unexpected
+  // end (engine crash/restart) opens the Transcript view, which offers Transcribe. null = no transition.
+  function decideAfterRecordingEnded(prev, status, stopRequested) {
+    if (!prev || !prev.recording || !prev.folder) return null;
+    if (status && status.recording && status.folder === prev.folder) return null;
+    if (status && status.recording) return null; // a new recording replaced it; the rec view takes over
+    return { folder: prev.folder, view: stopRequested ? 'prog' : 'tx' };
+  }
+
+  // True when the Transcribing view for this list item has nothing left to wait for.
+  function transcribingResolved(item, progress) {
+    if (!item || progress) return false;
+    return item.status === 'transcribed' || item.status === 'not transcribed';
   }
 
   const KEY_NAMES = { ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Win', win: 'Win', space: 'Space' };
@@ -104,6 +121,6 @@
 
   return {
     groupMeetings, fmtClock, fmtEta, escapeHtml, highlight, statusDot, timelineSegments,
-    prettyHotkey, basename, audioUrl,
+    prettyHotkey, basename, audioUrl, decideAfterRecordingEnded, transcribingResolved,
   };
 }));
