@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; media-src 'self' app-audio:; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+<title>Teams Listener pill</title>
+<link rel="stylesheet" href="pill.css">
+</head>
+<body>
+<div class="pill" id="pill">
+  <span class="pulse"></span>
+  <span class="ptime" id="ptime">00:00</span>
+  <span class="mini" id="pmini"></span>
+  <button class="m off" id="pmute" type="button"><span aria-hidden="true">🎤</span><span id="plabel">Muted</span></button>
+  <button class="ic" id="prestore" type="button" title="Open window" aria-label="Open window">⤢</button>
+  <button class="ic stop" id="pstop" type="button" title="Stop recording" aria-label="Stop recording">■</button>
+</div>
+<script src="pill.js"></script>
+</body>
+</html>

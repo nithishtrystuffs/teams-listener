@@ -559,6 +559,9 @@
     });
 
     api.on('state', applyStatus);
+    // Stop/start requested from the pill or tray run through the same paths as the buttons.
+    api.onUi('requestStop', stopRecording);
+    api.onUi('requestStart', startRecording);
     api.on('levels', (d) => {
       store.levels = d || { others: 0, me: 0 };
       drawMeters();

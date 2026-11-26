@@ -1,10 +1,12 @@
-const { app, BrowserWindow, ipcMain, protocol, clipboard, dialog, shell, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, clipboard, dialog, shell, nativeTheme, screen, Tray, Menu, nativeImage } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { EngineClient } = require('./engine');
 const { resolveEngine, resolveAudio, isOpenableFolder } = require('./paths');
+const { trayModel } = require('./tray');
+const { loadUiState, saveUiState, pillPosition } = require('./ui-state');
 
 const RENDERER_ALLOW = new Set([
   'status', 'start', 'stop', 'set_muted', 'toggle_mute', 'list_meetings', 'get_meeting',
@@ -15,6 +17,12 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 let mainWindow = null;
 let engine = null;
 let outputDir = '';
+let pillWindow = null;
+let tray = null;
+let lastState = null; // last engine `state` forwarded to the windows
+let isQuitting = false;
+let uiState = { pill: null };
+const PILL_SIZE = { width: 340, height: 44 };
 
 protocol.registerSchemesAsPrivileged([
   { scheme: 'app-audio', privileges: { stream: true, supportFetchAPI: true } },
@@ -23,13 +31,7 @@ protocol.registerSchemesAsPrivileged([
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
-  });
+  app.on('second-instance', () => showMain());
   app.whenReady().then(boot);
 }
 
@@ -55,6 +57,186 @@ function overlayColors() {
     : { color: '#00000000', symbolColor: '#16181d', height: 38 };
 }
 
+const isRecording = () => !!(lastState && lastState.recording);
+const mainAlive = () => !!(mainWindow && !mainWindow.isDestroyed());
+const pillAlive = () => !!(pillWindow && !pillWindow.isDestroyed());
+
+function showPill() {
+  if (pillAlive()) pillWindow.showInactive();
+}
+
+function hidePill() {
+  if (pillAlive()) pillWindow.hide();
+}
+
+function showMain() {
+  if (mainAlive()) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  hidePill();
+}
+
+function hideMainToPill() {
+  if (mainAlive()) mainWindow.hide();
+  showPill();
+}
+
+function sendUi(name, data) {
+  if (mainAlive()) mainWindow.webContents.send('ui:event', name, data);
+}
+
+// Stop goes through the main window so it shows Transcribing at once; direct if the window is gone.
+function requestStop() {
+  if (mainAlive() && !mainWindow.webContents.isCrashed()) sendUi('requestStop');
+  else if (engine) engine.call('stop').catch((err) => console.error('stop failed:', err.message));
+}
+
+function requestStart() {
+  if (mainAlive() && !mainWindow.webContents.isCrashed()) sendUi('requestStart');
+  else if (engine) engine.call('start', { title: '' }).catch((err) => console.error('start failed:', err.message));
+}
+
+function toggleMute() {
+  if (engine) engine.call('toggle_mute').catch((err) => console.error('toggle_mute failed:', err.message));
+}
+
+const uiStateFile = () => path.join(app.getPath('userData'), 'ui-state.json');
+
+function createPill() {
+  uiState = loadUiState(uiStateFile());
+  const displays = screen.getAllDisplays().map((d) => d.workArea);
+  const pos = pillPosition(uiState.pill, displays, screen.getPrimaryDisplay().workArea, PILL_SIZE);
+  pillWindow = new BrowserWindow({
+    ...PILL_SIZE,
+    x: pos.x,
+    y: pos.y,
+    useContentSize: true,
+    show: false,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  pillWindow.setAlwaysOnTop(true, 'floating');
+  let saveTimer = null;
+  pillWindow.on('moved', () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      if (!pillAlive()) return;
+      const [x, y] = pillWindow.getPosition();
+      uiState = { ...uiState, pill: { x, y } };
+      saveUiState(uiStateFile(), uiState);
+    }, 300);
+  });
+  pillWindow.on('closed', () => { pillWindow = null; });
+  pillWindow.loadFile(path.join(__dirname, '..', 'renderer', 'pill.html'));
+}
+
+function trayIcon(colour) {
+  return nativeImage.createFromPath(path.join(__dirname, '..', 'assets', `tray-${colour}.png`));
+}
+
+const TRAY_ACTIONS = {
+  show: () => showMain(),
+  startStop: () => (isRecording() ? requestStop() : requestStart()),
+  mute: () => toggleMute(),
+  quit: () => quitFromTray(),
+};
+
+function updateTray() {
+  if (!tray) return;
+  const m = trayModel(lastState);
+  tray.setImage(trayIcon(m.colour));
+  tray.setToolTip(m.tooltip);
+  tray.setContextMenu(Menu.buildFromTemplate(m.items.map((it) => ({
+    label: it.label,
+    enabled: it.enabled,
+    click: TRAY_ACTIONS[it.id],
+  }))));
+}
+
+function createTray() {
+  tray = new Tray(trayIcon('idle'));
+  tray.on('click', () => showMain());
+  updateTray();
+}
+
+function onState(data) {
+  const wasRec = isRecording();
+  lastState = data;
+  updateTray();
+  const nowRec = isRecording();
+  if (!nowRec) hidePill();
+  else if (!wasRec && !(mainAlive() && mainWindow.isVisible() && !mainWindow.isMinimized())) showPill();
+}
+
+async function confirm(message, buttons, defaultId, cancelId, detail) {
+  const opts = { type: 'question', buttons, defaultId, cancelId, message, detail, noLink: true };
+  const parent = mainAlive() && mainWindow.isVisible() ? mainWindow : null;
+  const r = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts);
+  return r.response;
+}
+
+let closeDialogOpen = false;
+async function onMainClose(e) {
+  if (isQuitting) return;
+  e.preventDefault();
+  if (!isRecording()) {
+    mainWindow.hide();
+    return;
+  }
+  if (closeDialogOpen) return;
+  closeDialogOpen = true;
+  try {
+    const r = await confirm('A meeting is being recorded.',
+      ['Stop and save', 'Keep recording in the tray', 'Cancel'], 1, 2, 'Stop recording and save it?');
+    if (r === 0) {
+      requestStop();
+      if (mainAlive()) mainWindow.hide();
+    } else if (r === 1) {
+      hideMainToPill();
+    }
+  } finally {
+    closeDialogOpen = false;
+  }
+}
+
+async function queueBusy() {
+  try {
+    const list = await engine.call('list_meetings');
+    return Array.isArray(list) && list.some((m) => m.status === 'queued' || m.status === 'transcribing');
+  } catch {
+    return false;
+  }
+}
+
+const withTimeout = (p, ms) => Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
+
+async function quitFromTray() {
+  if (isRecording()) {
+    if (await confirm('Stop the recording, save it and quit?', ['Stop and quit', 'Cancel'], 0, 1) !== 0) return;
+  } else if (await queueBusy()) {
+    if (await confirm('A transcription is still running. Quit anyway?', ['Quit anyway', 'Cancel'], 1, 1) !== 0) return;
+  }
+  isQuitting = true;
+  if (engine) {
+    await withTimeout(engine.call('quit'), 5000);
+    await withTimeout(engine.stop(), 8000);
+  }
+  app.exit(0);
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1100,
@@ -75,6 +257,10 @@ function createWindow() {
     },
   });
   mainWindow.on('closed', () => { mainWindow = null; });
+  mainWindow.on('close', onMainClose);
+  mainWindow.on('minimize', () => {
+    if (isRecording()) hideMainToPill(); // while recording, minimise means "to the pill"
+  });
   const query = {};
   if (process.env.TL_SMOKE_OPEN) query.smokeOpen = '1';
   if (process.env.TL_SMOKE_IDLE) query.smokeIdle = '1';
@@ -109,6 +295,24 @@ async function smokeCapture() {
   }
 }
 
+// Dev-only (TL_SMOKE_PILL=<png>): show the pill with a fake state pushed to it alone, capture it, exit.
+async function smokePill(file) {
+  await new Promise((r) => pillWindow.webContents.once('did-finish-load', r));
+  await new Promise((r) => setTimeout(r, 800));
+  pillWindow.webContents.send('engine:event', 'state', { recording: true, muted: true, elapsed_s: 763 });
+  showPill();
+  await new Promise((r) => setTimeout(r, 500));
+  try {
+    const img = await pillWindow.webContents.capturePage();
+    await fs.promises.writeFile(file, img.toPNG());
+    console.log('smoke pill written:', file);
+    smokeExit(0);
+  } catch (err) {
+    console.error('smoke pill failed:', err);
+    smokeExit(1);
+  }
+}
+
 function startEngine() {
   const { command, args } = resolveEngine({
     isPackaged: app.isPackaged,
@@ -120,6 +324,7 @@ function startEngine() {
   engine = new EngineClient({ spawn: spawnEngine, command, args, env: { ...process.env } });
   engine.on('event', (name, data) => {
     if (name === 'meetings_changed') refreshOutputDir();
+    if (name === 'state') onState(data);
     broadcast(name, data);
   });
   engine.on('ready', () => {
@@ -178,8 +383,16 @@ function registerIpc() {
         smokeCapture();
         return null;
       case 'minimiseToPill':
+        if (isRecording()) hideMainToPill();
+        else if (mainAlive()) mainWindow.minimize();
+        return null;
       case 'restore':
-        return null; // Task 8
+        showMain();
+        return null;
+      case 'pillStop':
+        requestStop();
+        showMain();
+        return null;
       default:
         throw new Error('not allowed: ' + action);
     }
@@ -233,12 +446,16 @@ function boot() {
   registerIpc();
   startEngine();
   createWindow();
+  createPill();
+  createTray();
+  if (process.env.TL_SMOKE_PILL) smokePill(process.env.TL_SMOKE_PILL);
   app.on('window-all-closed', () => app.quit());
-  let quitting = false;
+  let stopped = false;
   app.on('before-quit', (e) => {
-    if (quitting || !engine) return;
+    isQuitting = true;
+    if (stopped || !engine) return;
     e.preventDefault();
-    quitting = true;
+    stopped = true;
     engine.stop().finally(() => app.quit());
   });
 }

@@ -9,5 +9,12 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.on('engine:event', handler);
     return () => ipcRenderer.removeListener('engine:event', handler);
   },
+  onUi: (name, fn) => {
+    const handler = (_e, evName, data) => {
+      if (evName === name) fn(data);
+    };
+    ipcRenderer.on('ui:event', handler);
+    return () => ipcRenderer.removeListener('ui:event', handler);
+  },
   ui: (action, payload) => ipcRenderer.invoke('ui', action, payload),
 });
