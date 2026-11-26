@@ -327,6 +327,7 @@ def test_queue_reports_model_stage_when_download_needed(tmp_path):
   - Emits `'event'(name, data)` for event lines, `'exit'(code)` on exit, and `'ready'` after the first successful `status` reply.
   - It restarts after an unexpected exit, but not after `stop()`.
   - It splits stdout on `\n` across chunk boundaries, and logs and ignores non-JSON lines.
+  - If the spawn itself fails (an `'error'` event, for example ENOENT), it emits `'failed'({ command, message })` and does not retry. The renderer then shows "Couldn't start the recording engine (<command>). See %APPDATA%\TeamsListener\app.log." Test: `spawn error emits failed, no restart`.
 - Produces: `resolveEngine({ isPackaged, resourcesPath, repoRoot }) -> { command, args }` in `paths.js`.
   - Packaged: `resourcesPath/engine/teams-listener-engine.exe` with `[]`.
   - Development: `repoRoot/.venv/Scripts/python.exe` with `['-m','teams_listener']`.
