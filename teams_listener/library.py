@@ -31,10 +31,10 @@ def live_moments(events: list[dict], end_s: float) -> list[tuple[float, float]]:
         if kind == "unmute" and open_at is None:
             open_at = e["t"]
         elif kind == "mute" and open_at is not None:
-            spans.append((open_at, e["t"]))
+            spans.append((open_at, max(open_at, e["t"])))
             open_at = None
     if open_at is not None:
-        spans.append((open_at, end_s))
+        spans.append((open_at, max(open_at, end_s)))
     return spans
 
 
@@ -50,7 +50,7 @@ def search_meetings(output_dir: Path, query: str) -> list[dict]:
             continue
         try:
             count = t.read_text(encoding="utf-8").lower().count(q)
-        except OSError:
+        except (OSError, UnicodeDecodeError):
             continue
         if count > 0:
             results.append({"folder": str(d), "count": count})
@@ -62,9 +62,13 @@ def meeting_details(folder: Path) -> dict:
     meta = read_meta(folder)
     t = folder / TRANSCRIPT_NAME
     has_transcript = t.is_file()
-    lines = parse_transcript(t.read_text(encoding="utf-8")) if has_transcript else []
+    lines = parse_transcript(t.read_text(encoding="utf-8", errors="replace")) if has_transcript else []
     duration = (meta.end - meta.start).total_seconds() if meta.end else None
-    moments = live_moments(meta.events, duration if duration is not None else 0.0)
+    if duration is not None:
+        end_s = duration
+    else:
+        end_s = max((e.get("t", 0) for e in meta.events), default=0.0)
+    moments = live_moments(meta.events, end_s)
     others, me = folder / "others.flac", folder / "me.flac"
     audio = {"others": str(others), "me": str(me)} if others.is_file() and me.is_file() else None
     files = [p for p in (others, me) if p.is_file()]
