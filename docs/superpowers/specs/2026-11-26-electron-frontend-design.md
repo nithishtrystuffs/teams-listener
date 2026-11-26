@@ -52,7 +52,8 @@ v1 works well in real Teams calls (verified by the user), but the Tkinter window
 ## Non-goals
 
 - Live transcript during the call. The laptop's CPU can't do it; transcription stays after the call.
-- Bundling Python into an installer. The app runs from the repo with the existing `.venv`.
+- Putting the Whisper model inside the installer (the user chose download-on-first-use).
+- Code signing. The installer is unsigned, so SmartScreen shows "unknown publisher" once.
 - Changes to capture, mixing, transcription quality or the transcript file format.
 - macOS or Linux.
 - Copying the branding or look of any real product. The design is our own.
@@ -153,15 +154,35 @@ Electron main process ──spawn──► .venv\Scripts\python.exe -m teams_lis
 | `renderer/pill.html`, `pill.js` | The pill window |
 | `renderer/lib/*.js` | Pure helpers: grouping meetings by date, formatting times, live segments from events, search highlighting. Unit-tested with `node --test` |
 
-**Launching**
+**Launching (development)**
 
-- `run.bat` starts `desktop\node_modules\.bin\electron.cmd desktop`.
+- `npm start` in `desktop/` runs Electron against the repo's `.venv\Scripts\python.exe -m teams_listener.server`.
 - The engine path is resolved relative to the repo root.
-- The Tkinter UI stays in the repo as a fallback (`python -m teams_listener --tk`) until the Electron UI is verified in a real call. Removing it is a later, separate change.
+- `run.bat` is updated to do the same.
+
+### Packaging (decided by the user: bundle it)
+
+- **Python engine:** frozen with **PyInstaller** in one-folder mode into `teams-listener-engine.exe` plus its folder.
+  - Spec file: `packaging/engine.spec`.
+  - Hidden imports and data for `soundcard` (cffi), `comtypes`/`pycaw`, `pynput`, `ctranslate2`, `faster_whisper` (including its bundled Silero VAD asset), `soxr` and `soundfile` (libsndfile DLL) are declared there.
+- **App:** **electron-builder** NSIS installer `Teams Listener Setup <version>.exe`.
+  - The frozen engine folder is shipped as `extraResources/engine/`.
+  - Per-user install (no admin), with Start menu and desktop shortcuts and an uninstaller.
+- **Engine location at runtime:**
+  - Packaged: `process.resourcesPath/engine/teams-listener-engine.exe`.
+  - Development: the venv Python.
+  - Chosen with `app.isPackaged`.
+- **One build command:** `npm run dist` in `desktop/` runs PyInstaller first, then electron-builder. Output goes to `desktop/dist/`, which is git-ignored.
+- **Whisper model:** not bundled. It downloads once on first transcription into the standard Hugging Face cache (`%USERPROFILE%\.cache\huggingface`), as today, so this laptop already has `small.en`.
+  - While it downloads, the Transcribing view says "Downloading speech model (first time only, ~480 MB)…" instead of a stuck 0%. The engine emits `progress` with `stage: "model"` for this.
+  - This is the app's only network use. Audio never leaves the PC.
+- **Sizes:** installer about 150 MB, about 350–400 MB installed.
+- **Risk:** freezing native audio and ML libraries can need tweaks. Plan Task 1 is therefore a packaging spike: freeze the current engine and record plus transcribe 10 s from the frozen exe, before any UI work.
+- **Fallback:** the Tkinter UI stays in the repo (`python -m teams_listener --tk`) until the Electron app is verified in a real call. Removing it is a later, separate change.
 
 ## Error handling
 
-- **The engine fails to start** (for example, the venv is missing): the window shows a clear message with the path it tried, and the log location.
+- **The engine fails to start** (the venv or the bundled engine is missing): the window shows a clear message with the path it tried, and the log location.
 - **The engine dies mid-recording:**
   - The UI shows "Recording engine stopped unexpectedly — your audio so far is saved".
   - It restarts the engine, and the meeting appears in the list as "not transcribed", with Transcribe again available.
@@ -179,5 +200,5 @@ Electron main process ──spawn──► .venv\Scripts\python.exe -m teams_lis
 1. **Electron over Tauri,** because Node is already installed and Tauri needs Rust plus several GB of build tools.
 2. **The Tkinter UI is kept as a fallback for now,** removed later once the new UI is proven in a call.
 3. **The audio player plays the Others and Me tracks together;** there is no separate mixed file.
-4. **The app runs from the repo** (`run.bat`). There is no installer and Python is not bundled.
+4. **Packaging:** a per-user NSIS installer (no admin needed), with the engine frozen in one-folder mode. One-folder starts faster and is less often flagged by antivirus than a single-file exe.
 5. **The mic-lookup fix commits** that missed PR #1 ride along on this branch.
