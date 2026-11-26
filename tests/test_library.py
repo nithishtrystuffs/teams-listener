@@ -39,7 +39,7 @@ def test_meeting_details_without_audio(tmp_path):
 def test_resolve_meeting_rejects_escape(tmp_path):
     (tmp_path / "m").mkdir()
     assert resolve_meeting(tmp_path, str(tmp_path / "m")) == (tmp_path / "m").resolve()
-    for bad in ["..", str(tmp_path.parent), str(tmp_path / "m" / ".." / ".."), "C:\Windows"]:
+    for bad in ["..", str(tmp_path.parent), str(tmp_path / "m" / ".." / ".."), "C:\\Windows"]:
         with pytest.raises(ValueError): resolve_meeting(tmp_path, bad)
 
 
