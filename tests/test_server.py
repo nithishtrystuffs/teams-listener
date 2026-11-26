@@ -186,3 +186,69 @@ def test_eof_mid_stream_after_start_shuts_down_once():
     s.serve()
     assert h["c"].calls == [("start", "t")]
     assert h["c"].shutdowns == 1
+
+
+_NATIVE_NOISE_SCRIPT = r'''
+import os, sys
+from teams_listener import server
+
+server._setup_logging = lambda: None
+
+
+class Noisy:
+    def __init__(self, emit):
+        self.emit = emit
+
+    def status(self):
+        os.write(1, b"native noise on fd 1\n")  # what a C library's printf would do
+        print("python print noise")
+        self.emit("state", {"seq": 1})
+        return {"recording": False}
+
+    def poll(self):
+        pass
+
+    def shutdown(self):
+        os.write(1, b"noise at shutdown\n")
+
+
+server.main(controller_factory=Noisy)
+'''
+
+
+def test_native_fd1_writes_do_not_corrupt_protocol():
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent
+    p = subprocess.run([sys.executable, "-c", _NATIVE_NOISE_SCRIPT], cwd=root,
+                       input=b'{"id":1,"cmd":"status"}\n{"id":2,"cmd":"status"}\n',
+                       capture_output=True, timeout=30)
+    assert p.returncode == 0, p.stderr
+    out = p.stdout.decode("utf-8").splitlines()
+    msgs = [json.loads(x) for x in out]  # every stdout line is protocol JSON
+    assert [m.get("id") for m in msgs if "id" in m] == [1, 2]
+    assert b"native noise on fd 1" in p.stderr and b"python print noise" in p.stderr
+
+
+def test_protocol_stdout_falls_back_to_devnull_when_fd2_is_invalid(monkeypatch):
+    calls = []
+    real_dup2 = server.os.dup2
+
+    def fake_dup2(a, b):
+        calls.append((a, b))
+        if a == 2:
+            raise OSError("bad fd 2")
+        return real_dup2(a, b)
+
+    saved = server.os.dup(1)
+    try:
+        monkeypatch.setattr(server.os, "dup2", fake_dup2)
+        monkeypatch.setattr(server, "_point_std_handle_at_fd1", lambda: None)
+        out = server._protocol_stdout()
+        out.close()
+        assert calls[0] == (2, 1) and calls[1][1] == 1  # second dup2: devnull onto fd 1
+    finally:
+        monkeypatch.undo()
+        server.os.dup2(saved, 1)
+        server.os.close(saved)

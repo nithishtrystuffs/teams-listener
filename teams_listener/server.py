@@ -99,11 +99,52 @@ class Server:
             self.controller.shutdown()
 
 
+def _point_std_handle_at_fd1() -> None:
+    """Windows: native code that writes via GetStdHandle(STD_OUTPUT_HANDLE) must follow fd 1 too."""
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        import msvcrt
+
+        ctypes.windll.kernel32.SetStdHandle(-11, msvcrt.get_osfhandle(1))  # STD_OUTPUT_HANDLE
+    except Exception:  # noqa: BLE001
+        log.warning("could not repoint the Win32 stdout handle", exc_info=True)
+
+
+def _protocol_stdout():
+    """Take the real stdout (fd 1) for the protocol and point fd 1 at stderr (or devnull when fd 2 is
+    unusable), so writes to fd 1 from native code can't corrupt the protocol stream."""
+    if sys.stdout is not None:
+        try:
+            sys.stdout.flush()
+        except Exception:  # noqa: BLE001
+            pass
+    fd = os.dup(1)
+    try:
+        os.dup2(2, 1)
+    except OSError:
+        null = os.open(os.devnull, os.O_WRONLY)
+        try:
+            os.dup2(null, 1)
+        finally:
+            os.close(null)
+    _point_std_handle_at_fd1()
+    return os.fdopen(fd, "wb", buffering=0)
+
+
 def main(stdin=None, stdout=None, controller_factory=None) -> None:
     """stdin/stdout are binary streams (default: the process's real ones)."""
     _setup_logging()
     raw_in = stdin if stdin is not None else sys.stdin.buffer
-    raw_out = stdout if stdout is not None else sys.stdout.buffer
+    if stdout is not None:
+        raw_out = stdout
+    else:
+        try:
+            raw_out = _protocol_stdout()
+        except OSError:
+            log.warning("could not move the protocol off fd 1", exc_info=True)
+            raw_out = sys.stdout.buffer
     inp = io.TextIOWrapper(raw_in, encoding="utf-8", errors="replace")
     out = io.TextIOWrapper(raw_out, encoding="utf-8", newline="\n")
     # Stray prints must not corrupt the protocol stream.

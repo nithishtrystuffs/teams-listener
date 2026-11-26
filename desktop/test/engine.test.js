@@ -154,3 +154,47 @@ test('multibyte utf-8 split across chunks is decoded intact', async () => {
   assert.deepStrictEqual(got, ['\u00e9']);
   await e.stop();
 });
+
+test('call times out, rejects and forgets the pending call', async () => {
+  const { f, e } = mk({ callTimeoutMs: 20, longCallTimeoutMs: 60 });
+  e.start();
+  const t0 = Date.now();
+  await assert.rejects(e.call('get_settings'), { message: 'engine did not reply: get_settings' });
+  assert.ok(Date.now() - t0 < 55);
+  await new Promise(r => setTimeout(r, 5));
+  assert.strictEqual(e._pending.size, 0); // the startup status timed out too
+  await e.stop();
+});
+
+test('stop, start and transcribe_again get the longer timeout', async () => {
+  const { f, e } = mk({ callTimeoutMs: 20, longCallTimeoutMs: 80 });
+  e.start();
+  const c = f.children[0];
+  const p = e.call('stop');
+  let settled = false;
+  p.catch(() => {}).finally(() => { settled = true; });
+  await new Promise(r => setTimeout(r, 40));
+  assert.strictEqual(settled, false); // past the short timeout, still waiting
+  await assert.rejects(p, { message: 'engine did not reply: stop' });
+  const sent = c.sent.find(m => m.cmd === 'stop');
+  assert.ok(!e._pending.has(sent.id));
+  await e.stop();
+});
+
+test('a reply after the timeout is ignored', async () => {
+  const { f, e } = mk({ callTimeoutMs: 10 });
+  e.start();
+  const c = f.children[0];
+  const p = e.call('status');
+  await assert.rejects(p, /did not reply/);
+  const sent = c.sent.filter(m => m.cmd === 'status').pop();
+  reply(c, { id: sent.id, ok: true, result: {} }); // late: must not throw
+  await tick();
+  await e.stop();
+});
+
+test('default timeouts are 30 s and 60 s', () => {
+  const e = new EngineClient({ spawn: () => {}, command: 'x' });
+  assert.strictEqual(e.callTimeoutMs, 30000);
+  assert.strictEqual(e.longCallTimeoutMs, 60000);
+});

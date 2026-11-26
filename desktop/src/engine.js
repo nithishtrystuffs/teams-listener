@@ -3,15 +3,23 @@ const { EventEmitter } = require('node:events');
 const MAX_CRASHES = 5;
 const CRASH_WINDOW_MS = 60000;
 const STOP_TIMEOUT_MS = 5000;
+const CALL_TIMEOUT_MS = 30000;
+const LONG_CALL_TIMEOUT_MS = 60000;
+const LONG_CALLS = new Set(['stop', 'start', 'transcribe_again']); // may wait on devices or disk
 
 class EngineClient extends EventEmitter {
-  constructor({ spawn, command, args = [], env = {}, restartDelayMs = 1000 }) {
+  constructor({
+    spawn, command, args = [], env = {}, restartDelayMs = 1000,
+    callTimeoutMs = CALL_TIMEOUT_MS, longCallTimeoutMs = LONG_CALL_TIMEOUT_MS,
+  }) {
     super();
     this._spawn = spawn;
     this.command = command;
     this.args = args;
     this.env = env;
     this.restartDelayMs = restartDelayMs;
+    this.callTimeoutMs = callTimeoutMs;
+    this.longCallTimeoutMs = longCallTimeoutMs;
     this._child = null;
     this._nextId = 1;
     this._pending = new Map();
@@ -135,12 +143,22 @@ class EngineClient extends EventEmitter {
     if (this._dead || !this._child) return Promise.reject(new Error('engine stopped'));
     const id = this._nextId++;
     return new Promise((resolve, reject) => {
-      this._pending.set(id, { resolve, reject });
+      const ms = LONG_CALLS.has(cmd) ? this.longCallTimeoutMs : this.callTimeoutMs;
+      const timer = setTimeout(() => {
+        if (this._pending.get(id) !== entry) return;
+        this._pending.delete(id);
+        reject(new Error(`engine did not reply: ${cmd}`));
+      }, ms);
+      const entry = {
+        resolve: (v) => { clearTimeout(timer); resolve(v); },
+        reject: (e) => { clearTimeout(timer); reject(e); },
+      };
+      this._pending.set(id, entry);
       try {
         this._child.stdin.write(JSON.stringify({ id, cmd, args }) + '\n');
       } catch (err) {
         this._pending.delete(id);
-        reject(err);
+        entry.reject(err);
       }
     });
   }
