@@ -1,6 +1,7 @@
 """Real audio devices via `soundcard` (WASAPI). Verified manually; the Recorder is tested with fakes."""
 from __future__ import annotations
 
+import sys
 import warnings
 from typing import Protocol
 
@@ -95,12 +96,16 @@ def list_mic_names() -> list[str]:
 
 def _default_communications_capture_id() -> str | None:
     try:
+        # soundcard initialises COM as multithreaded (MTA); comtypes would try STA on import and fail
+        # with "Cannot change thread mode after it is set". COINIT_MULTITHREADED = 0.
+        if not hasattr(sys, "coinit_flags"):
+            sys.coinit_flags = 0
         import comtypes
-        from pycaw.constants import EDataFlow, ERole
-        from pycaw.pycaw import CLSID_MMDeviceEnumerator, IMMDeviceEnumerator
+        from pycaw.api.mmdeviceapi import IMMDeviceEnumerator
+        from pycaw.constants import CLSID_MMDeviceEnumerator, EDataFlow, ERole
 
         try:
-            comtypes.CoInitialize()
+            comtypes.CoInitializeEx(0)  # COINIT_MULTITHREADED for this thread (no-op if already MTA)
         except OSError:
             pass
         enum = comtypes.CoCreateInstance(CLSID_MMDeviceEnumerator, IMMDeviceEnumerator, comtypes.CLSCTX_INPROC_SERVER)
