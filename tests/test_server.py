@@ -252,3 +252,13 @@ def test_protocol_stdout_falls_back_to_devnull_when_fd2_is_invalid(monkeypatch):
         monkeypatch.undo()
         server.os.dup2(saved, 1)
         server.os.close(saved)
+
+
+def test_shutdown_is_logged_so_a_clean_eof_stop_is_visible(caplog):
+    import logging
+
+    caplog.set_level(logging.INFO, logger="teams_listener.server")
+    s, h, _ = make('{"id":1,"cmd":"status"}\n')
+    s.serve()
+    msgs = [r.getMessage() for r in caplog.records]
+    assert "engine shutting down" in msgs and "engine shut down cleanly" in msgs

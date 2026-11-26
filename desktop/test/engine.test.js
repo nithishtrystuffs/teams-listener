@@ -198,3 +198,15 @@ test('default timeouts are 30 s and 60 s', () => {
   assert.strictEqual(e.callTimeoutMs, 30000);
   assert.strictEqual(e.longCallTimeoutMs, 60000);
 });
+
+test('engine is spawned detached (outlives an Electron crash) with piped stdio and no window', async () => {
+  const seen = [];
+  const f = makeFake();
+  const spawn = (cmd, args, opts) => { seen.push(opts); return f.spawn(cmd, args, opts); };
+  const e = new EngineClient({ spawn, command: 'py', restartDelayMs: 1 });
+  e.start();
+  assert.strictEqual(seen[0].detached, true);
+  assert.strictEqual(seen[0].windowsHide, true);
+  assert.deepStrictEqual(seen[0].stdio, ['pipe', 'pipe', 'pipe']);
+  await e.stop();
+});

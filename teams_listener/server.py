@@ -95,8 +95,10 @@ class Server:
                     break
         finally:
             self._stop.set()
+            log.info("engine shutting down")  # stdin EOF (UI quit or died) or quit
             poller.join(timeout=5)
             self.controller.shutdown()
+            log.info("engine shut down cleanly")
 
 
 def _point_std_handle_at_fd1() -> None:

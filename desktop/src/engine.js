@@ -37,7 +37,11 @@ class EngineClient extends EventEmitter {
     this._buf = '';
     let child;
     try {
+      // detached: keeps the engine out of the kill-on-close job object libuv puts children in on Windows,
+      // so if Electron crashes or is killed the engine sees stdin EOF and stops the recording cleanly
+      // (meta.json gets end/devices/events) instead of dying with it. A normal quit still uses stop().
       child = this._spawn(this.command, this.args, {
+        detached: true,
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...this.env, PYTHONIOENCODING: 'utf-8', PYTHONUNBUFFERED: '1' },
