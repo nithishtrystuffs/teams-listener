@@ -5,7 +5,7 @@ const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { EngineClient } = require('./engine');
 const { resolveEngine, resolveAudio, isOpenableFolder } = require('./paths');
-const { trayModel } = require('./tray');
+const { trayModel, stateAfterEngineEvent } = require('./tray');
 const { loadUiState, saveUiState, pillPosition } = require('./ui-state');
 
 const RENDERER_ALLOW = new Set([
@@ -205,7 +205,8 @@ async function onMainClose(e) {
       requestStop();
       if (mainAlive()) mainWindow.hide();
     } else if (r === 1) {
-      hideMainToPill();
+      if (isRecording()) hideMainToPill(); // the recording may have ended while the dialog was open
+      else if (mainAlive()) mainWindow.hide();
     }
   } finally {
     closeDialogOpen = false;
@@ -223,18 +224,35 @@ async function queueBusy() {
 
 const withTimeout = (p, ms) => Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
 
+let quitInProgress = false;
 async function quitFromTray() {
-  if (isRecording()) {
-    if (await confirm('Stop the recording, save it and quit?', ['Stop and quit', 'Cancel'], 0, 1) !== 0) return;
-  } else if (await queueBusy()) {
-    if (await confirm('A transcription is still running. Quit anyway?', ['Quit anyway', 'Cancel'], 1, 1) !== 0) return;
+  if (quitInProgress) return;
+  quitInProgress = true;
+  try {
+    if (isRecording()) {
+      if (await confirm('Stop the recording, save it and quit?', ['Stop and quit', 'Cancel'], 0, 1) !== 0) {
+        quitInProgress = false;
+        return;
+      }
+      // Stopping queues the meeting; the engine's quit stops it. Ask about the queue afterwards.
+      try { await engine.call('stop'); } catch (err) { console.error('stop before quit failed:', err.message); }
+    }
+    if (await queueBusy()) {
+      if (await confirm('A transcription is still running. Quit anyway?', ['Quit anyway', 'Cancel'], 1, 1) !== 0) {
+        quitInProgress = false;
+        return;
+      }
+    }
+    isQuitting = true;
+    if (engine) {
+      await withTimeout(engine.call('quit'), 5000);
+      await withTimeout(engine.stop(), 8000);
+    }
+    app.exit(0);
+  } catch (err) {
+    console.error('quit failed:', err);
+    quitInProgress = false;
   }
-  isQuitting = true;
-  if (engine) {
-    await withTimeout(engine.call('quit'), 5000);
-    await withTimeout(engine.stop(), 8000);
-  }
-  app.exit(0);
 }
 
 function createWindow() {
@@ -258,6 +276,12 @@ function createWindow() {
   });
   mainWindow.on('closed', () => { mainWindow = null; });
   mainWindow.on('close', onMainClose);
+  // Windows shutdown/logoff: never block it with the close dialog; stop the engine so audio is saved.
+  const onSessionEnd = () => {
+    isQuitting = true;
+    if (engine) engine.stop().catch(() => {});
+  };
+  mainWindow.on('session-end', onSessionEnd);
   mainWindow.on('minimize', () => {
     if (isRecording()) hideMainToPill(); // while recording, minimise means "to the pill"
   });
@@ -330,13 +354,22 @@ function startEngine() {
   engine.on('ready', () => {
     console.log('engine ready');
     refreshOutputDir();
+    // A (re)started engine emits no state until something changes, so resync every surface.
+    engine.call('status').then((st) => {
+      if (st && typeof st === 'object') {
+        onState(st);
+        broadcast('state', st);
+      }
+    }).catch((err) => console.error('status after ready failed:', err.message));
   });
   engine.on('failed', (info) => {
     console.error('engine failed:', info);
+    onState(stateAfterEngineEvent('failed', lastState));
     broadcast('engine_failed', info);
   });
   engine.on('exit', (code) => {
     console.error('engine exit:', code);
+    onState(stateAfterEngineEvent('exit', lastState));
     broadcast('engine_exit', { code });
   });
   engine.start();

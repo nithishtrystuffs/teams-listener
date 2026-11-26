@@ -23,4 +23,12 @@ function trayModel(state) {
   };
 }
 
-module.exports = { trayModel };
+// Engine lifecycle events that invalidate the last known state: a dead engine is not recording.
+function stateAfterEngineEvent(event, last) {
+  if (event === 'exit' || event === 'failed') {
+    return { recording: false, muted: true, title: '', folder: null, elapsed_s: 0, nomic: false };
+  }
+  return last;
+}
+
+module.exports = { trayModel, stateAfterEngineEvent };

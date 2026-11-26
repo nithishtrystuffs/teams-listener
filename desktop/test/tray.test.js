@@ -42,3 +42,20 @@ test('show and quit always enabled', () => {
   assert.strictEqual(item(m, 'show').enabled, true);
   assert.strictEqual(item(m, 'quit').enabled, true);
 });
+
+const { stateAfterEngineEvent } = require('../src/tray');
+
+test('engine exit or failure means not recording', () => {
+  const rec = { recording: true, muted: false, title: 'x', elapsed_s: 5 };
+  for (const ev of ['exit', 'failed']) {
+    const s = stateAfterEngineEvent(ev, rec);
+    assert.strictEqual(s.recording, false);
+    assert.strictEqual(trayModel(s).colour, 'idle');
+  }
+});
+
+test('other engine events leave state alone', () => {
+  const rec = { recording: true, muted: true };
+  assert.strictEqual(stateAfterEngineEvent('ready', rec), rec);
+  assert.strictEqual(stateAfterEngineEvent('exit', null).recording, false);
+});
