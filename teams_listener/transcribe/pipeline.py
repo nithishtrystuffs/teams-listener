@@ -67,10 +67,12 @@ class TranscriptionQueue:
         on_progress: Callable[[Path, float, float | None], None],
         on_done: Callable[[Path, Path], None],
         on_error: Callable[[Path, Exception], None],
+        on_stage: Callable[[Path, str], None] | None = None,
     ):
         self._factory = engine_factory
         self._get_settings = get_settings
         self._on_progress, self._on_done, self._on_error = on_progress, on_done, on_error
+        self._on_stage = on_stage
         self._q: queue.Queue[Path | None] = queue.Queue()
         self._engine: Engine | None = None
         self._engine_key: tuple | None = None
@@ -129,7 +131,13 @@ class TranscriptionQueue:
 
             try:
                 s = self._get_settings()
-                path = transcribe_meeting(folder, self._engine_for(s), s, progress)
+                engine = self._engine_for(s)
+                if self._on_stage:
+                    needs = getattr(engine, "needs_download", None)
+                    if needs is not None and needs():
+                        self._on_stage(folder, "model")
+                    self._on_stage(folder, "transcribe")
+                path = transcribe_meeting(folder, engine, s, progress)
             except Exception as e:  # noqa: BLE001 - reported to the UI; audio is kept
                 self._engine = None  # don't reuse an engine that may be broken
                 self._on_error(folder, e)

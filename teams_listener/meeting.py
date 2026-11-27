@@ -74,8 +74,8 @@ class MeetingEntry:
     status: str  # "transcribed" | "not transcribed"
 
 
-def list_meetings(output_dir: Path, limit: int = 50) -> list[MeetingEntry]:
-    """Meeting folders, newest first (folder names start with YYYY-MM-DD_HHMM)."""
+def list_meetings(output_dir: Path, limit: int | None = 50) -> list[MeetingEntry]:
+    """Meeting folders, newest first (folder names start with YYYY-MM-DD_HHMM). limit=None: all of them."""
     output_dir = Path(output_dir)
     if not output_dir.is_dir():
         return []
@@ -90,6 +90,6 @@ def list_meetings(output_dir: Path, limit: int = 50) -> list[MeetingEntry]:
             title = d.name
         status = "transcribed" if (d / "transcript.md").exists() else "not transcribed"
         entries.append(MeetingEntry(d, title, status))
-        if len(entries) >= limit:
+        if limit is not None and len(entries) >= limit:
             break
     return entries

@@ -146,3 +146,30 @@ def test_transcribe_again_after_audio_deleted_keeps_transcript(tmp_path):
     with pytest.raises(NoAudioError):
         transcribe_meeting(folder, FakeEngine(others=[]), Settings(), lambda f: None)
     assert (folder / "transcript.md").read_text(encoding="utf-8") == before
+
+
+def test_queue_reports_model_stage_when_download_needed(tmp_path):
+    class DL(FakeEngine):
+        def needs_download(self): return True
+    stages, done = [], threading.Event()
+    q = TranscriptionQueue(lambda: DL(), lambda: Settings(), lambda *a: None,
+                           lambda f, p: done.set(), lambda f, e: done.set(),
+                           on_stage=lambda f, s: stages.append(s))
+    q.submit(fake_meeting(tmp_path)); assert done.wait(10); q.shutdown()
+    assert stages == ["model", "transcribe"]
+
+
+def test_queue_skips_model_stage_when_engine_lacks_needs_download(tmp_path):
+    stages, done = [], threading.Event()
+    q = TranscriptionQueue(lambda: FakeEngine(), lambda: Settings(), lambda *a: None,
+                           lambda f, p: done.set(), lambda f, e: done.set(),
+                           on_stage=lambda f, s: stages.append(s))
+    q.submit(fake_meeting(tmp_path)); assert done.wait(10); q.shutdown()
+    assert stages == ["transcribe"]
+
+
+def test_whisper_engine_needs_download():
+    from teams_listener.transcribe.engine import WhisperEngine
+    assert WhisperEngine("base.en", model_path="C:/some/model").needs_download() is False
+    # local_files_only: never touches the network
+    assert WhisperEngine("definitely-not-a-model-xyz").needs_download() is True

@@ -10,29 +10,30 @@ A personal Windows app that records your Teams meetings and turns them into a ti
 > **Consent:** this is a personal tool, but recording other people may still need their consent and may be
 > covered by your company's policy. Check before you use it.
 
-## Setup (once)
+## Install
 
-```bat
-cd D:\Learn\teams-listener
-py -3.11 -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
-```
+Build the installer once (see Development), then run **`desktop\dist\Teams Listener Setup <version>.exe`**.
+It installs per user (no admin rights) to `%LOCALAPPDATA%\Programs\teams-listener`, adds a desktop shortcut and
+starts the app. The installer isn't code-signed, so Windows SmartScreen may warn: click **More info → Run anyway**.
 
-Start the app by double-clicking **`run.bat`**. It opens a small window and a tray icon.
+The app opens a window and a tray icon. While a recording runs, minimising or hiding the window shows a small
+always-on-top pill with the timer, the mute button and Stop.
 
-**First transcription** downloads the model from Hugging Face (small.en ≈ 0.5 GB, medium.en ≈ 1.5 GB).
+**First transcription** downloads the speech model from Hugging Face once (small.en ≈ 480 MB, medium.en ≈ 1.5 GB).
 If your office network blocks that, download the model folder (e.g. `Systran/faster-whisper-small.en`) on
 another network and choose it under **Settings → Model folder**.
 
 ## Using it
 
-1. Optionally type a meeting title, then press **● Start recording** when the meeting begins.
-2. The big **MIC** button starts **MUTED (red)**. Press it, or the shortcut **Ctrl+Alt+M**, to go **LIVE (green)**
+1. Press **● New recording** to open the title screen, optionally type a meeting title, then press **● Start**
+   when the meeting begins.
+2. The big mic button starts **MUTED**. Press it, or the shortcut **Ctrl+Alt+M**, to go **LIVE**
    when you speak, then press again to mute. The shortcut works while Teams has focus.
    The tray icon is grey when idle, red when recording and muted, and green when recording and live.
 3. Press **■ Stop recording**. Transcription starts in the background with a progress bar and an estimate of the time left.
    You can start another recording while it runs: transcription **pauses** while you record and resumes when you stop, so calls stay smooth.
-4. Double-click a meeting in **Recent meetings** (or press **Open transcript**).
+4. Open a meeting from **Recent meetings** to read the transcript, switch to **Only my lines**, play the audio
+   or open the folder.
 
 Closing the window keeps the app in the tray. If a recording is running it asks whether to stop and save.
 Use **Quit** in the tray menu to exit.
@@ -86,9 +87,21 @@ when you press Start and carries on after Stop.
 
 ## Development
 
+The Python engine (`teams_listener/`) is driven by the Electron app in `desktop/` over JSON lines on stdin/stdout.
+
 ```bat
-.venv\Scripts\pytest -m "not slow"   :: fast unit tests
-.venv\Scripts\pytest -m slow         :: real Whisper (tiny.en) on a speech fixture
+py -3.11 -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+npm install --prefix desktop
+
+run.bat                               :: dev launcher (or: npm start --prefix desktop)
+.venv\Scripts\pytest -m "not slow"    :: fast Python tests
+.venv\Scripts\pytest -m slow          :: real Whisper (tiny.en) on a speech fixture
+npm test --prefix desktop             :: JS tests
+
+.venv\Scripts\pip install -r requirements-build.txt
+npm run dist --prefix desktop         :: PyInstaller engine + NSIS installer in desktop\dist
+.venv\Scripts\python -m teams_listener --tk   :: old Tkinter UI, as a fallback
 ```
 
 Logs: `%APPDATA%\TeamsListener\app.log`. Settings: `%APPDATA%\TeamsListener\settings.json`.
@@ -104,13 +117,14 @@ Logs: `%APPDATA%\TeamsListener\app.log`. Settings: `%APPDATA%\TeamsListener\sett
 
 | Check | Result |
 |---|---|
-| Unit tests (`pytest -m "not slow"`) | ✅ |
+| Unit tests (`pytest -m "not slow"`, `npm test --prefix desktop`) | ✅ |
 | Real Whisper on speech fixture (`pytest -m slow`) | ✅ |
-| End-to-end: app start → unmute → speech through speakers → stop → transcript | ✅ transcript correct, meta has device + unmute events |
+| End-to-end: Tk app start → unmute → speech through speakers → stop → transcript | ✅ transcript correct, meta has device + unmute events |
 | Real loopback recording: tone placed at correct time, silence elsewhere | ✅ |
 | Teams test call, mic muted throughout → Others only | ⏳ needs you |
 | Unmute with Ctrl+Alt+M while Teams has focus → Me lines at right time, tray icon colour | ⏳ needs you (no mic was detected at build time) |
-| Bluetooth headphones connect/disconnect mid-recording → no gap, events in meta.json | ⏳ needs you |
+| Bluetooth headphones (realme Buds Air7) connect/disconnect mid-recording → no gap, events logged | ✅ buds→laptop speakers→buds switches captured; every sentence played was transcribed |
+| Bluetooth: opening the buds' mic doesn't degrade the audio you hear | ✅ confirmed by ear |
 | Speakers + unmuted mic (echo) → no duplicate Me lines | ⏳ needs you |
 | Hard-kill the recording process mid-meeting → listed "not transcribed" → transcribes | ✅ (simulated with the recorder process; worth one real try in the app) |
 | Close window while recording → prompt → saved and transcribed | ⏳ needs you |

@@ -5,3 +5,8 @@ __pycache__/
 models/
 .superpowers/
 .pytest_cache/
+build/
+dist/
+desktop/node_modules/
+desktop/dist/
+desktop/build/engine-dist/
