@@ -2,6 +2,12 @@
 name = "teams-listener"
 version = "0.1.0"
 requires-python = ">=3.11"
+description = "Offline meeting recorder and transcriber engine for Windows"
+license = "MIT"
+authors = [{ name = "Nithishkumar R" }]
+
+[project.urls]
+Repository = "https://github.com/nithishtrystuffs/teams-listener"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

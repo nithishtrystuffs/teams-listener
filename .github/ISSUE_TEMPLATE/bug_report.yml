@@ -1,0 +1,44 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please **don't attach recordings or transcripts of real meetings** — they contain other people's voices and words.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start a recording
+        2. Press Ctrl+Alt+M
+        3. ...
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: e.g. 1.0.0 (installer) or commit SHA
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: e.g. Windows 11 23H2
+  - type: textarea
+    id: audio
+    attributes:
+      label: Audio devices
+      description: Speakers / headphones / Bluetooth model and the mic you use.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log excerpt
+      description: From `%APPDATA%\TeamsListener\app.log`. Remove anything private (meeting titles, names).
+      render: text
