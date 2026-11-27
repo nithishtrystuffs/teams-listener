@@ -1,0 +1,86 @@
+name: Release
+
+# Builds the Windows installer from the tagged source and publishes it as a GitHub Release.
+# Push a tag like v1.0.0 to release; run it manually to just build and download the artifact.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      # The npm build script expects the engine's venv at .venv (same layout as local development).
+      - name: Python venv
+        run: |
+          python -m venv .venv
+          .venv\Scripts\python -m pip install --upgrade pip
+          .venv\Scripts\pip install -r requirements.txt -r requirements-build.txt
+
+      - name: Tests
+        run: .venv\Scripts\python -m pytest -q -m "not slow"
+
+      - name: Desktop dependencies
+        working-directory: desktop
+        run: |
+          npm ci
+          npm test
+
+      - name: Freeze the engine (PyInstaller)
+        working-directory: desktop
+        run: npm run build:engine
+
+      # Prove the frozen engine loads Whisper and transcribes (tiny model keeps the download small).
+      - name: Frozen engine selftest
+        shell: pwsh
+        run: |
+          $out = & desktop\build\engine-dist\teams-listener-engine\teams-listener-engine.exe --selftest --wav tests\fixtures\fox.wav --record-seconds 0 --model tiny.en
+          Write-Output $out
+          if (-not ($out -match 'fox')) { throw 'selftest did not transcribe the fixture' }
+
+      # Code signing goes here once a certificate is available (e.g. the SignPath GitHub action).
+      - name: Build installer
+        working-directory: desktop
+        run: npx electron-builder --win --publish never
+
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem desktop\dist\*.exe | Select-Object -First 1
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($exe.Name)" | Out-File -Encoding ascii desktop\dist\SHA256SUMS.txt
+          Get-Content desktop\dist\SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/SHA256SUMS.txt
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exe = (Get-ChildItem desktop\dist\*.exe | Select-Object -First 1).FullName
+          $notes = ".github\release-notes\$env:GITHUB_REF_NAME.md"
+          if (-not (Test-Path $notes)) { $notes = ".github\release-notes\default.md" }
+          gh release create $env:GITHUB_REF_NAME $exe desktop\dist\SHA256SUMS.txt --title "Teams Listener $env:GITHUB_REF_NAME" --notes-file $notes
