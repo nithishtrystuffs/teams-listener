@@ -1,18 +1,31 @@
 # Teams Listener
 
-A personal Windows app that records your Teams meetings and turns them into a timestamped transcript,
-**entirely on your own laptop**. No bot joins the meeting, no admin rights are needed, and nothing is uploaded.
+[![CI](https://github.com/nithishtrystuffs/teams-listener/actions/workflows/ci.yml/badge.svg)](https://github.com/nithishtrystuffs/teams-listener/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+A Windows app that records your Teams (or any) meetings and turns them into a timestamped transcript,
+**entirely on your own PC**. No bot joins the meeting, no admin rights are needed, and nothing is uploaded.
 
 - **Others** = everything your PC plays (speakers, wired or Bluetooth headphones).
 - **Me** = your microphone, which you **unmute in the app** only when you speak.
-- After you press **Stop**, the meeting is transcribed offline with Whisper (`small.en` by default).
+- After you press **Stop**, the meeting is transcribed offline with [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
+  (`small.en` by default). English only for now.
 
-> **Consent:** this is a personal tool, but recording other people may still need their consent and may be
-> covered by your company's policy. Check before you use it.
+> **Consent:** recording other people may require their consent by law and may be covered by your employer's
+> policy. You are responsible for how you use this tool.
+
+> Not affiliated with or endorsed by Microsoft. "Microsoft Teams" is a trademark of Microsoft Corporation.
+
+## Requirements
+
+- Windows 10 or 11, 64-bit
+- ~400 MB disk for the app, plus ~480 MB for the `small.en` speech model (downloaded once)
+- No GPU needed
 
 ## Install
 
-Build the installer once (see Development), then run **`desktop\dist\Teams Listener Setup <version>.exe`**.
+Download **`Teams Listener Setup <version>.exe`** from [Releases](https://github.com/nithishtrystuffs/teams-listener/releases),
+or build it yourself (see Development).
 It installs per user (no admin rights) to `%LOCALAPPDATA%\Programs\teams-listener`, adds a desktop shortcut and
 starts the app. The installer isn't code-signed, so Windows SmartScreen may warn: click **More info → Run anyway**.
 
@@ -71,7 +84,7 @@ The audio is kept unless you enable **Settings → Delete audio after a successf
 If the app or PC crashes mid-meeting, the raw tracks survive. The meeting shows as **not transcribed**;
 select it and press **Transcribe again**.
 
-## Speed on this laptop (i5-8365U, no GPU)
+## Speed (measured on an i5-8365U laptop, no GPU)
 
 Measured on 2 min 17 s of clear English speech (Windows TTS), CPU only:
 
@@ -106,26 +119,23 @@ npm run dist --prefix desktop         :: PyInstaller engine + NSIS installer in 
 
 Logs: `%APPDATA%\TeamsListener\app.log`. Settings: `%APPDATA%\TeamsListener\settings.json`.
 
-## Capture notes (spike, 2026-11-25)
-- `soundcard` WASAPI loopback on this laptop delivers continuous zero-filled blocks during silence and warns
-  `data discontinuity`. The app filters that warning, and the track writer's wall-clock gap-fill stays as a safety net.
-- `soundcard.all_microphones()` re-enumerates devices on every call, so newly connected devices appear on the next poll.
-- At build time Windows reported **no microphone** on this machine. The app keeps recording "Others" with no mic,
-  and picks one up if it appears mid-meeting.
+## How it works
 
-## Verified
+- **Capture:** WASAPI loopback on every output device plus your mic, via [`soundcard`](https://github.com/bastibe/SoundCard).
+  Devices that connect or disconnect mid-meeting are picked up automatically. Audio is written continuously to
+  per-device tracks on one meeting clock, so a crash never loses what was recorded.
+- **Transcription:** after Stop, the tracks are mixed to `others.flac` / `me.flac` and transcribed separately
+  with faster-whisper on the CPU; "Me" lines that echo an "Others" line are dropped.
+- **App:** an Electron front end talks to the Python engine over JSON lines on stdin/stdout. The engine is the
+  single source of truth for recording and mute state.
 
-| Check | Result |
-|---|---|
-| Unit tests (`pytest -m "not slow"`, `npm test --prefix desktop`) | ✅ |
-| Real Whisper on speech fixture (`pytest -m slow`) | ✅ |
-| End-to-end: Tk app start → unmute → speech through speakers → stop → transcript | ✅ transcript correct, meta has device + unmute events |
-| Real loopback recording: tone placed at correct time, silence elsewhere | ✅ |
-| Teams test call, mic muted throughout → Others only | ⏳ needs you |
-| Unmute with Ctrl+Alt+M while Teams has focus → Me lines at right time, tray icon colour | ⏳ needs you (no mic was detected at build time) |
-| Bluetooth headphones (realme Buds Air7) connect/disconnect mid-recording → no gap, events logged | ✅ buds→laptop speakers→buds switches captured; every sentence played was transcribed |
-| Bluetooth: opening the buds' mic doesn't degrade the audio you hear | ✅ confirmed by ear |
-| Speakers + unmuted mic (echo) → no duplicate Me lines | ⏳ needs you |
-| Hard-kill the recording process mid-meeting → listed "not transcribed" → transcribes | ✅ (simulated with the recorder process; worth one real try in the app) |
-| Close window while recording → prompt → saved and transcribed | ⏳ needs you |
-| Recording CPU < 5% | ✅ ≈ 0.5% of the machine (4% of one core), measured in-process |
+Design notes live in [`docs/superpowers/specs/`](docs/superpowers/specs/).
+
+## Contributing
+
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) and the
+[Code of Conduct](CODE_OF_CONDUCT.md). Security issues: see [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE)
