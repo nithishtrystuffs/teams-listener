@@ -24,7 +24,7 @@ A Windows app that records your Teams (or any) meetings and turns them into a ti
 
 ## Install
 
-Download **`Teams Listener Setup <version>.exe`** from [Releases](https://github.com/nithishtrystuffs/teams-listener/releases),
+Download **`TeamsListener-Setup-<version>.exe`** from [Releases](https://github.com/nithishtrystuffs/teams-listener/releases),
 or build it yourself (see Development).
 It installs per user (no admin rights) to `%LOCALAPPDATA%\Programs\teams-listener`, adds a desktop shortcut and
 starts the app. The installer isn't code-signed, so Windows SmartScreen may warn: click **More info → Run anyway**.

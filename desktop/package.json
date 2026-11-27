@@ -47,7 +47,8 @@
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "createDesktopShortcut": true
+      "createDesktopShortcut": true,
+      "artifactName": "TeamsListener-Setup-${version}.${ext}"
     }
   }
 }
