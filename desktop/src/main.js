@@ -5,7 +5,7 @@ const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
 const { EngineClient } = require('./engine');
 const { resolveEngine, resolveAudio, isOpenableFolder, realDir } = require('./paths');
-const { trayModel, stateAfterEngineEvent } = require('./tray');
+const { trayModel, stateAfterEngineEvent, shouldAutoPill } = require('./tray');
 const { shouldApplyState, seqAfter } = require('../renderer/lib/ui-helpers');
 const { loadUiState, saveUiState, pillPosition } = require('./ui-state');
 
@@ -196,11 +196,40 @@ function onState(data) {
   return true;
 }
 
+// Our own native dialogs take focus from the main window; that must not collapse it to the pill.
+let dialogDepth = 0;
+async function withDialog(fn) {
+  dialogDepth++;
+  try {
+    return await fn();
+  } finally {
+    dialogDepth--;
+  }
+}
+
 async function confirm(message, buttons, defaultId, cancelId, detail) {
   const opts = { type: 'question', buttons, defaultId, cancelId, message, detail, noLink: true };
   const parent = mainAlive() && mainWindow.isVisible() ? mainWindow : null;
-  const r = parent ? await dialog.showMessageBox(parent, opts) : await dialog.showMessageBox(opts);
+  const r = await withDialog(() => (parent ? dialog.showMessageBox(parent, opts) : dialog.showMessageBox(opts)));
   return r.response;
+}
+
+// While recording, leaving the window (e.g. clicking into Teams) collapses it to the pill.
+// A short delay lets focus settle, so a dialog or a quick re-focus doesn't trigger it.
+let autoPillTimer = null;
+function onMainBlur() {
+  if (process.env.TL_SMOKE || process.env.TL_SMOKE_PILL) return;
+  clearTimeout(autoPillTimer);
+  autoPillTimer = setTimeout(() => {
+    if (!mainAlive()) return;
+    if (shouldAutoPill({
+      recording: isRecording(),
+      mainVisible: mainWindow.isVisible() && !mainWindow.isMinimized(),
+      mainFocused: mainWindow.isFocused(),
+      dialogOpen: dialogDepth > 0 || closeDialogOpen,
+      quitting: isQuitting || quitInProgress,
+    })) hideMainToPill();
+  }, 250);
 }
 
 let closeDialogOpen = false;
@@ -297,6 +326,8 @@ function createWindow() {
     if (engine) engine.stop().catch(() => {});
   };
   mainWindow.on('session-end', onSessionEnd);
+  mainWindow.on('blur', onMainBlur);
+  mainWindow.on('focus', () => clearTimeout(autoPillTimer));
   mainWindow.on('minimize', () => {
     if (isRecording()) hideMainToPill(); // while recording, minimise means "to the pill"
   });
@@ -410,7 +441,7 @@ function registerIpc() {
         return err || null;
       }
       case 'pickFolder': {
-        const r = await dialog.showOpenDialog(mainWindow || undefined, { properties: ['openDirectory'] });
+        const r = await withDialog(() => dialog.showOpenDialog(mainWindow || undefined, { properties: ['openDirectory'] }));
         return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
       }
       case 'exportMarkdown': {
@@ -418,10 +449,10 @@ function registerIpc() {
         const dir = await isOpenableFolder(outputDir, folder, fs.promises.stat);
         if (!dir) throw new Error('not a folder');
         const src = path.join(dir, 'transcript.md');
-        const r = await dialog.showSaveDialog(mainWindow || undefined, {
+        const r = await withDialog(() => dialog.showSaveDialog(mainWindow || undefined, {
           defaultPath: path.basename(dir) + '.md',
           filters: [{ name: 'Markdown', extensions: ['md'] }],
-        });
+        }));
         if (r.canceled || !r.filePath) return null;
         await fs.promises.copyFile(src, r.filePath);
         return r.filePath;

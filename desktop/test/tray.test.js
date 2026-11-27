@@ -65,3 +65,14 @@ test('stateAfterEngineEvent marks a reset seq so the next engine is not ignored'
   assert.strictEqual(stateAfterEngineEvent('exit', { seq: 12 }).seq, -1);
   assert.strictEqual(stateAfterEngineEvent('failed', { seq: 12 }).seq, -1);
 });
+
+test('shouldAutoPill: losing focus while recording goes to the pill', () => {
+  const { shouldAutoPill } = require('../src/tray');
+  const base = { recording: true, mainVisible: true, mainFocused: false, dialogOpen: false, quitting: false };
+  assert.strictEqual(shouldAutoPill(base), true);
+  assert.strictEqual(shouldAutoPill({ ...base, recording: false }), false); // no pill when idle
+  assert.strictEqual(shouldAutoPill({ ...base, mainFocused: true }), false); // focus came back
+  assert.strictEqual(shouldAutoPill({ ...base, mainVisible: false }), false); // already hidden
+  assert.strictEqual(shouldAutoPill({ ...base, dialogOpen: true }), false); // our own dialog took focus
+  assert.strictEqual(shouldAutoPill({ ...base, quitting: true }), false);
+});

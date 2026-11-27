@@ -32,4 +32,10 @@ function stateAfterEngineEvent(event, last) {
   return last;
 }
 
-module.exports = { trayModel, stateAfterEngineEvent };
+// While recording, the main window collapses to the pill whenever it loses focus — except when
+// one of our own dialogs took the focus, or the app is quitting.
+function shouldAutoPill({ recording, mainVisible, mainFocused, dialogOpen, quitting }) {
+  return Boolean(recording && mainVisible && !mainFocused && !dialogOpen && !quitting);
+}
+
+module.exports = { trayModel, stateAfterEngineEvent, shouldAutoPill };
