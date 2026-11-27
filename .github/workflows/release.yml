@@ -6,6 +6,9 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+  # Changes to the release build are test-built on their PR (nothing is published).
+  pull_request:
+    paths: [".github/workflows/release.yml", "packaging/**", "desktop/package.json"]
 
 permissions:
   contents: write
