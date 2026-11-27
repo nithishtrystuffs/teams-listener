@@ -1,5 +1,5 @@
 numpy
-soundcard>=0.4.3
+soundcard>=0.4.6
 soxr
 soundfile
 faster-whisper
